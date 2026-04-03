@@ -1,0 +1,14 @@
+{
+  "name": "chatgpt-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension: discuss current page in ChatGPT side panel",
+  "scripts": {
+    "build": "tsc && cp src/manifest.json src/*.html src/*.css src/rules.json src/icons/* dist/",
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.38",
+    "typescript": "^5.8.3"
+  }
+}
