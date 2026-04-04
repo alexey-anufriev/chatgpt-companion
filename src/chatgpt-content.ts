@@ -22,13 +22,15 @@ async function bootstrap(): Promise<void> {
 async function tryApplyLatestPrompt(): Promise<void> {
     const data = (await chrome.storage.local.get([
         "discussPrompt",
-        "discussPromptStamp"
+        "discussPromptStamp",
+        "discussConsumed"
     ])) as StorageShape;
 
     const prompt = data.discussPrompt;
     const stamp = data.discussPromptStamp;
+    const consumed = data.discussConsumed;
 
-    if (!prompt || !stamp) {
+    if (!prompt || !stamp || consumed) {
         return;
     }
 
@@ -44,6 +46,11 @@ async function tryApplyLatestPrompt(): Promise<void> {
 
     insertPrompt(input, prompt);
     lastAppliedStamp = stamp;
+
+    await chrome.storage.local.set({
+        discussConsumed: true
+    });
+
     console.log("[discuss-with-chatgpt-ext] prompt inserted");
 }
 

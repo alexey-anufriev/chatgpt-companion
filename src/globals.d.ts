@@ -8,4 +8,5 @@ type StorageShape = {
     discussPrompt?: string;
     discussPromptStamp?: number;
     discussSource?: DiscussSource;
+    discussConsumed?: boolean;
 };

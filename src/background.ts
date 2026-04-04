@@ -45,7 +45,8 @@ async function handleDiscussClick(
         await chrome.storage.local.set({
             discussPrompt: prompt,
             discussPromptStamp: Date.now(),
-            discussSource: result
+            discussSource: result,
+            discussConsumed: false
         });
 
         console.log("[discuss-with-chatgpt-ext] prompt saved");

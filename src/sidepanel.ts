@@ -33,7 +33,8 @@ function attachEvents(): void {
 
     reinsertBtn?.addEventListener("click", async () => {
         await chrome.storage.local.set({
-            discussPromptStamp: Date.now()
+            discussPromptStamp: Date.now(),
+            discussConsumed: false
         });
     });
 }
