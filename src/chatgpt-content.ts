@@ -16,7 +16,60 @@ async function bootstrap(): Promise<void> {
         if (changes["discussPromptStamp"]) {
             await tryApplyLatestPrompt();
         }
+
+        if (changes["closeDiscussion"]?.newValue === true) {
+            await clearChatGPTNullThreadDraft();
+        }
     });
+}
+
+async function clearChatGPTNullThreadDraft(): Promise<void> {
+    const { closeDiscussion } = await chrome.storage.local.get("closeDiscussion");
+    if (!closeDiscussion) {
+        return;
+    }
+
+    const key = "oai/apps/conversationDrafts";
+
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) {
+            return;
+        }
+
+        const parsed = JSON.parse(raw) as {
+            drafts?: { id?: string }[];
+        };
+
+        if (!Array.isArray(parsed.drafts)) {
+            return;
+        }
+
+        const nextDrafts = parsed.drafts.filter((draft) => draft.id !== "null_thread");
+
+        if (nextDrafts.length === parsed.drafts.length) {
+            return;
+        }
+
+        const nextValue = {
+            ...parsed,
+            drafts: nextDrafts
+        };
+
+        if (nextDrafts.length === 0) {
+            localStorage.removeItem(key);
+        } else {
+            localStorage.setItem(key, JSON.stringify(nextValue));
+        }
+
+        console.log("[discuss-with-chatgpt-ext] null_thread draft cleared");
+    } catch (e) {
+        console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", e);
+    } finally {
+        await chrome.storage.local.set({
+            closeDiscussion: false
+        });
+    }
 }
 
 async function tryApplyLatestPrompt(): Promise<void> {

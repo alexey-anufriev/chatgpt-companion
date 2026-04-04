@@ -2,11 +2,12 @@ const sourceTitleEl = document.getElementById("sourceTitle") as HTMLDivElement |
 const sourceUrlEl = document.getElementById("sourceUrl") as HTMLDivElement | null;
 const copyPromptBtn = document.getElementById("copyPromptBtn") as HTMLButtonElement | null;
 const reinsertBtn = document.getElementById("reinsertBtn") as HTMLButtonElement | null;
+const closeBtn = document.getElementById("closeBtn") as HTMLButtonElement | null;
 
 void init();
 
 async function init(): Promise<void> {
-    if (!sourceTitleEl || !sourceUrlEl || !copyPromptBtn || !reinsertBtn) {
+    if (!sourceTitleEl || !sourceUrlEl || !copyPromptBtn || !reinsertBtn || !closeBtn) {
         console.error("[discuss-with-chatgpt-ext] side panel DOM elements not found");
         return;
     }
@@ -36,6 +37,20 @@ function attachEvents(): void {
             discussPromptStamp: Date.now(),
             discussConsumed: false
         });
+    });
+
+    closeBtn?.addEventListener("click", async () => {
+        await chrome.storage.local.set({
+            discussPrompt: "",
+            discussPromptStamp: Date.now(),
+            discussConsumed: false,
+            discussSource: undefined,
+            closeDiscussion: true
+        });
+
+        await new Promise((r) => setTimeout(r, 150));
+
+        window.close();
     });
 }
 
