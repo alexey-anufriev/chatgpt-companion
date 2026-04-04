@@ -91,8 +91,8 @@ function buildPrompt(data: DiscussSource): string {
         "Please:",
         "- Provide a concise summary",
         "- Identify the main idea",
-        "- Point out weak or questionable parts",
         "- Highlight what is actually important",
+        "- Point out weak or questionable parts",
         "",
         "Use the language of the original material for your response."
     );
