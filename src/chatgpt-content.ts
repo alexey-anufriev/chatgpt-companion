@@ -24,11 +24,11 @@ function attachStorageListenerOnce(): void {
             return;
         }
 
-        if (changes["discussPromptStamp"] || changes["discussionSessionId"]) {
+        if (changes["discussions"]) {
             await tryApplyLatestPrompt();
         }
 
-        if (changes["closeDiscussion"]?.newValue === true) {
+        if (changes["closeDiscussionSessionId"]) {
             await clearChatGPTNullThreadDraft();
         }
     });
@@ -37,28 +37,19 @@ function attachStorageListenerOnce(): void {
 }
 
 async function tryApplyLatestPrompt(): Promise<void> {
-    const data = (await chrome.storage.local.get([
-        "discussPrompt",
-        "discussPromptStamp",
-        "discussConsumed",
-        "discussionSessionId"
-    ])) as StorageShape;
-
-    const prompt = data.discussPrompt;
-    const stamp = data.discussPromptStamp;
-    const consumed = data.discussConsumed;
-    const expectedSessionId = data.discussionSessionId;
     const currentSessionId = getCurrentSessionId();
-
-    if (!expectedSessionId || !currentSessionId || expectedSessionId !== currentSessionId) {
+    if (!currentSessionId) {
         return;
     }
 
-    if (!stamp || consumed) {
+    const data = (await chrome.storage.local.get("discussions")) as StorageShape;
+    const discussion = data.discussions?.[currentSessionId];
+
+    if (!discussion || !discussion.stamp || discussion.consumed) {
         return;
     }
 
-    if (lastAppliedStamp === stamp) {
+    if (lastAppliedStamp === discussion.stamp) {
         return;
     }
 
@@ -68,14 +59,20 @@ async function tryApplyLatestPrompt(): Promise<void> {
         return;
     }
 
-    insertPrompt(input, prompt ?? "");
-    lastAppliedStamp = stamp;
+    insertPrompt(input, discussion.prompt);
+    lastAppliedStamp = discussion.stamp;
+
+    const nextDiscussions = { ...(data.discussions ?? {}) };
+    nextDiscussions[currentSessionId] = {
+        ...discussion,
+        consumed: true
+    };
 
     await chrome.storage.local.set({
-        discussConsumed: true
+        discussions: nextDiscussions
     });
 
-    if (prompt) {
+    if (discussion.prompt) {
         console.log("[discuss-with-chatgpt-ext] prompt inserted", { currentSessionId });
     } else {
         console.log("[discuss-with-chatgpt-ext] composer cleared", { currentSessionId });
@@ -83,8 +80,12 @@ async function tryApplyLatestPrompt(): Promise<void> {
 }
 
 async function clearChatGPTNullThreadDraft(): Promise<void> {
-    const { closeDiscussion } = await chrome.storage.local.get("closeDiscussion");
-    if (!closeDiscussion) {
+    const { closeDiscussionSessionId } = (await chrome.storage.local.get(
+        "closeDiscussionSessionId"
+    )) as StorageShape;
+    const currentSessionId = getCurrentSessionId();
+
+    if (!closeDiscussionSessionId || !currentSessionId || closeDiscussionSessionId !== currentSessionId) {
         return;
     }
 
@@ -122,12 +123,15 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
         }
 
         console.log("[discuss-with-chatgpt-ext] null_thread draft cleared");
-    } catch (e) {
-        console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", e);
+    } catch (error) {
+        console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", error);
     } finally {
-        await chrome.storage.local.set({
-            closeDiscussion: false
-        });
+        const latest = (await chrome.storage.local.get("closeDiscussionSessionId")) as StorageShape;
+        if (latest.closeDiscussionSessionId === currentSessionId) {
+            await chrome.storage.local.set({
+                closeDiscussionSessionId: undefined
+            });
+        }
     }
 }
 
@@ -154,11 +158,11 @@ async function waitForComposer(
     timeoutMs = 15000
 ): Promise<HTMLElement | HTMLTextAreaElement | null> {
     const selectors = [
-        '[contenteditable="true"][role="textbox"]',
-        '#prompt-textarea[contenteditable="true"]',
-        '#prompt-textarea',
-        'div[contenteditable="true"]',
-        "textarea"
+        'form [contenteditable="true"][role="textbox"]',
+        'form #prompt-textarea[contenteditable="true"]',
+        'form #prompt-textarea',
+        '[data-testid="composer"] [contenteditable="true"][role="textbox"]',
+        '[data-testid="composer"] textarea'
     ];
 
     const startedAt = Date.now();
@@ -183,32 +187,14 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
     const isClear = text.length === 0;
 
     if (element instanceof HTMLTextAreaElement) {
-        element.value = text;
+        const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+        descriptor?.set?.call(element, text);
         element.dispatchEvent(new Event("input", { bubbles: true }));
         element.dispatchEvent(new Event("change", { bubbles: true }));
         return;
     }
 
-    // TODO: test without this tricky insertion
-    try {
-        const selection = window.getSelection();
-        if (!selection) {
-            throw new Error("No selection available");
-        }
-
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        selection.removeAllRanges();
-        selection.addRange(range);
-
-        document.execCommand("delete", false);
-
-        if (!isClear) {
-            document.execCommand("insertText", false, text);
-        }
-    } catch {
-        element.textContent = text;
-    }
+    replaceContentEditableText(element, text);
 
     element.dispatchEvent(
         new InputEvent("input", {
@@ -218,6 +204,29 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
             data: isClear ? null : text
         })
     );
+}
+
+function replaceContentEditableText(element: HTMLElement, text: string): void {
+    const selection = window.getSelection();
+    const range = document.createRange();
+
+    element.replaceChildren();
+
+    if (text.length > 0) {
+        const lines = text.split("\n");
+        lines.forEach((line, index) => {
+            if (index > 0) {
+                element.append(document.createElement("br"));
+            }
+
+            element.append(document.createTextNode(line));
+        });
+    }
+
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
 }
 
 function isVisible(el: HTMLElement): boolean {

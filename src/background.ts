@@ -30,6 +30,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     if (tabId === activeDiscussionTabId) {
         activeDiscussionTabId = null;
     }
+
+    void clearDiscussionForTab(tabId);
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -66,14 +68,11 @@ chrome.sidePanel.onClosed.addListener(async (info) => {
         activeDiscussionTabId = null;
     }
 
-    await chrome.storage.local.set({
-        discussPrompt: "",
-        discussPromptStamp: Date.now(),
-        discussConsumed: false,
-        discussSource: undefined,
-        closeDiscussion: true,
-        discussionSessionId: crypto.randomUUID()
-    });
+    if (typeof info.tabId !== "number") {
+        return;
+    }
+
+    await clearDiscussionForTab(info.tabId);
 });
 
 async function ensurePanelConfiguredForAllTabs(): Promise<void> {
@@ -127,20 +126,61 @@ async function handleDiscussClick(
 
         const prompt = buildPrompt(result);
         const sessionId = crypto.randomUUID();
+        const storage = (await chrome.storage.local.get([
+            "discussions",
+            "tabSessionIds"
+        ])) as StorageShape;
+        const previousSessionId = storage.tabSessionIds?.[String(tab.id)];
+        const discussions = { ...(storage.discussions ?? {}) };
+        const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+
+        if (previousSessionId) {
+            delete discussions[previousSessionId];
+        }
+
+        discussions[sessionId] = {
+            prompt,
+            stamp: Date.now(),
+            source: result,
+            consumed: false
+        };
+        tabSessionIds[String(tab.id)] = sessionId;
 
         await chrome.storage.local.set({
-            discussPrompt: prompt,
-            discussPromptStamp: Date.now(),
-            discussSource: result,
-            discussConsumed: false,
-            closeDiscussion: false,
-            discussionSessionId: sessionId
+            discussions,
+            tabSessionIds,
+            closeDiscussionSessionId: undefined
         });
 
-        console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId });
+        console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId, tabId: tab.id });
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] handleDiscussClick failed", error);
     }
+}
+
+async function clearDiscussionForTab(tabId: number): Promise<void> {
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const tabKey = String(tabId);
+    const sessionId = storage.tabSessionIds?.[tabKey];
+
+    if (!sessionId) {
+        return;
+    }
+
+    const discussions = { ...(storage.discussions ?? {}) };
+    const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+
+    delete discussions[sessionId];
+    delete tabSessionIds[tabKey];
+
+    await chrome.storage.local.set({
+        discussions,
+        tabSessionIds,
+        closeDiscussionSessionId: sessionId
+    });
 }
 
 function collectPageData(selectionText: string): DiscussSource {

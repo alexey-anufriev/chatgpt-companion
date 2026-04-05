@@ -4,7 +4,7 @@
   "private": true,
   "description": "Chrome extension: discuss current page in ChatGPT side panel",
   "scripts": {
-    "build": "tsc && cp src/manifest.json src/*.html src/*.css src/rules.json src/icons/* dist/",
+    "build": "node scripts/clean-dist.mjs && tsc && node scripts/copy-assets.mjs",
     "watch": "tsc -w"
   },
   "devDependencies": {

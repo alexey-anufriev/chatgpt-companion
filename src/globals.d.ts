@@ -4,11 +4,15 @@ type DiscussSource = {
     selection: string;
 };
 
+type DiscussionState = {
+    prompt: string;
+    stamp: number;
+    source: DiscussSource;
+    consumed: boolean;
+};
+
 type StorageShape = {
-    discussPrompt?: string;
-    discussPromptStamp?: number;
-    discussSource?: DiscussSource;
-    discussConsumed?: boolean;
-    closeDiscussion?: boolean;
-    discussionSessionId?: string;
+    discussions?: Record<string, DiscussionState>;
+    tabSessionIds?: Record<string, string>;
+    closeDiscussionSessionId?: string;
 };

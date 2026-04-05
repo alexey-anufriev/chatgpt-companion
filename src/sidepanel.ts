@@ -26,40 +26,76 @@ async function init(): Promise<void> {
             return;
         }
 
-        if (changes["discussPromptStamp"] || changes["discussSource"]) {
+        if (changes["discussions"] || changes["tabSessionIds"]) {
             await renderSource();
-        }
-
-        if (changes["discussionSessionId"]) {
             await syncIframeSession();
         }
+    });
+
+    chrome.tabs.onActivated.addListener(() => {
+        void renderSource();
+        void syncIframeSession();
     });
 }
 
 function attachEvents(): void {
     copyPromptBtn?.addEventListener("click", async () => {
-        const data = (await chrome.storage.local.get("discussPrompt")) as StorageShape;
-        await navigator.clipboard.writeText(data.discussPrompt ?? "");
+        const discussion = await getActiveDiscussion();
+        await navigator.clipboard.writeText(discussion?.prompt ?? "");
     });
 
     reinsertBtn?.addEventListener("click", async () => {
-        await chrome.storage.local.set({
-            discussPromptStamp: Date.now(),
-            discussConsumed: false
-        });
+        const activeTabId = await getActiveTabId();
+        if (activeTabId === null) {
+            return;
+        }
+
+        const storage = (await chrome.storage.local.get([
+            "discussions",
+            "tabSessionIds"
+        ])) as StorageShape;
+        const sessionId = storage.tabSessionIds?.[String(activeTabId)];
+        if (!sessionId || !storage.discussions?.[sessionId]) {
+            return;
+        }
+
+        const discussions = { ...storage.discussions };
+        discussions[sessionId] = {
+            ...discussions[sessionId],
+            stamp: Date.now(),
+            consumed: false
+        };
+
+        await chrome.storage.local.set({ discussions });
     });
 
     closeBtn?.addEventListener("click", async () => {
+        const activeTabId = await getActiveTabId();
+        if (activeTabId === null) {
+            return;
+        }
+
+        const storage = (await chrome.storage.local.get([
+            "discussions",
+            "tabSessionIds"
+        ])) as StorageShape;
+        const tabKey = String(activeTabId);
+        const sessionId = storage.tabSessionIds?.[tabKey];
+        const discussions = { ...(storage.discussions ?? {}) };
+        const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+
+        if (sessionId) {
+            delete discussions[sessionId];
+            delete tabSessionIds[tabKey];
+        }
+
         await chrome.storage.local.set({
-            discussPrompt: "",
-            discussPromptStamp: Date.now(),
-            discussConsumed: false,
-            discussSource: undefined,
-            closeDiscussion: true,
-            discussionSessionId: crypto.randomUUID()
+            discussions,
+            tabSessionIds,
+            closeDiscussionSessionId: sessionId
         });
 
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
 
         window.close();
     });
@@ -70,8 +106,8 @@ async function renderSource(): Promise<void> {
         return;
     }
 
-    const data = (await chrome.storage.local.get("discussSource")) as StorageShape;
-    const source = data.discussSource;
+    const discussion = await getActiveDiscussion();
+    const source = discussion?.source;
 
     if (!source) {
         sourceTitleEl.textContent = "Page not selected";
@@ -88,8 +124,13 @@ async function syncIframeSession(): Promise<void> {
         return;
     }
 
-    const data = (await chrome.storage.local.get("discussionSessionId")) as StorageShape;
-    const sessionId = data.discussionSessionId;
+    const activeTabId = await getActiveTabId();
+    if (activeTabId === null) {
+        return;
+    }
+
+    const data = (await chrome.storage.local.get("tabSessionIds")) as StorageShape;
+    const sessionId = data.tabSessionIds?.[String(activeTabId)];
 
     if (!sessionId || sessionId === currentIframeSessionId) {
         return;
@@ -103,4 +144,28 @@ function buildChatUrl(sessionId: string): string {
     const url = new URL(CHATGPT_BASE_URL);
     url.hash = `dwc_session=${encodeURIComponent(sessionId)}`;
     return url.toString();
+}
+
+async function getActiveDiscussion(): Promise<DiscussionState | null> {
+    const activeTabId = await getActiveTabId();
+    if (activeTabId === null) {
+        return null;
+    }
+
+    const data = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const sessionId = data.tabSessionIds?.[String(activeTabId)];
+
+    return sessionId ? data.discussions?.[sessionId] ?? null : null;
+}
+
+async function getActiveTabId(): Promise<number | null> {
+    const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true
+    });
+
+    return typeof tab?.id === "number" ? tab.id : null;
 }
