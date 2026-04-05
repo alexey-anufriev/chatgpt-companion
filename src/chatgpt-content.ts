@@ -1,4 +1,5 @@
 let lastAppliedStamp: number | null = null;
+let isStorageListenerAttached = false;
 
 void bootstrap();
 
@@ -6,14 +7,24 @@ async function bootstrap(): Promise<void> {
     console.log("[discuss-with-chatgpt-ext] bootstrapper loaded", location.href);
 
     await waitForDocumentReady();
+
+    attachStorageListenerOnce();
+
+    await clearChatGPTNullThreadDraft();
     await tryApplyLatestPrompt();
+}
+
+function attachStorageListenerOnce(): void {
+    if (isStorageListenerAttached) {
+        return;
+    }
 
     chrome.storage.onChanged.addListener(async (changes, areaName) => {
         if (areaName !== "local") {
             return;
         }
 
-        if (changes["discussPromptStamp"]) {
+        if (changes["discussPromptStamp"] || changes["discussionSessionId"]) {
             await tryApplyLatestPrompt();
         }
 
@@ -21,6 +32,54 @@ async function bootstrap(): Promise<void> {
             await clearChatGPTNullThreadDraft();
         }
     });
+
+    isStorageListenerAttached = true;
+}
+
+async function tryApplyLatestPrompt(): Promise<void> {
+    const data = (await chrome.storage.local.get([
+        "discussPrompt",
+        "discussPromptStamp",
+        "discussConsumed",
+        "discussionSessionId"
+    ])) as StorageShape;
+
+    const prompt = data.discussPrompt;
+    const stamp = data.discussPromptStamp;
+    const consumed = data.discussConsumed;
+    const expectedSessionId = data.discussionSessionId;
+    const currentSessionId = getCurrentSessionId();
+
+    if (!expectedSessionId || !currentSessionId || expectedSessionId !== currentSessionId) {
+        return;
+    }
+
+    if (!stamp || consumed) {
+        return;
+    }
+
+    if (lastAppliedStamp === stamp) {
+        return;
+    }
+
+    const input = await waitForComposer();
+    if (!input) {
+        console.warn("[discuss-with-chatgpt-ext] ChatGPT composer not found");
+        return;
+    }
+
+    insertPrompt(input, prompt ?? "");
+    lastAppliedStamp = stamp;
+
+    await chrome.storage.local.set({
+        discussConsumed: true
+    });
+
+    if (prompt) {
+        console.log("[discuss-with-chatgpt-ext] prompt inserted", { currentSessionId });
+    } else {
+        console.log("[discuss-with-chatgpt-ext] composer cleared", { currentSessionId });
+    }
 }
 
 async function clearChatGPTNullThreadDraft(): Promise<void> {
@@ -72,39 +131,13 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
     }
 }
 
-async function tryApplyLatestPrompt(): Promise<void> {
-    const data = (await chrome.storage.local.get([
-        "discussPrompt",
-        "discussPromptStamp",
-        "discussConsumed"
-    ])) as StorageShape;
+function getCurrentSessionId(): string | null {
+    const hash = window.location.hash.startsWith("#")
+        ? window.location.hash.slice(1)
+        : window.location.hash;
 
-    const prompt = data.discussPrompt;
-    const stamp = data.discussPromptStamp;
-    const consumed = data.discussConsumed;
-
-    if (!prompt || !stamp || consumed) {
-        return;
-    }
-
-    if (lastAppliedStamp === stamp) {
-        return;
-    }
-
-    const input = await waitForComposer();
-    if (!input) {
-        console.warn("[discuss-with-chatgpt-ext] ChatGPT composer not found");
-        return;
-    }
-
-    insertPrompt(input, prompt);
-    lastAppliedStamp = stamp;
-
-    await chrome.storage.local.set({
-        discussConsumed: true
-    });
-
-    console.log("[discuss-with-chatgpt-ext] prompt inserted");
+    const params = new URLSearchParams(hash);
+    return params.get("dwc_session");
 }
 
 async function waitForDocumentReady(): Promise<void> {
@@ -147,6 +180,8 @@ async function waitForComposer(
 function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string): void {
     element.focus();
 
+    const isClear = text.length === 0;
+
     if (element instanceof HTMLTextAreaElement) {
         element.value = text;
         element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -167,7 +202,10 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
         selection.addRange(range);
 
         document.execCommand("delete", false);
-        document.execCommand("insertText", false, text);
+
+        if (!isClear) {
+            document.execCommand("insertText", false, text);
+        }
     } catch {
         element.textContent = text;
     }
@@ -176,8 +214,8 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
         new InputEvent("input", {
             bubbles: true,
             cancelable: true,
-            inputType: "insertText",
-            data: text
+            inputType: isClear ? "deleteContentBackward" : "insertText",
+            data: isClear ? null : text
         })
     );
 }

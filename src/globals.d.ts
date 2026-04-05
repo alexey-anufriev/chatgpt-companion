@@ -9,4 +9,6 @@ type StorageShape = {
     discussPromptStamp?: number;
     discussSource?: DiscussSource;
     discussConsumed?: boolean;
+    closeDiscussion?: boolean;
+    discussionSessionId?: string;
 };
