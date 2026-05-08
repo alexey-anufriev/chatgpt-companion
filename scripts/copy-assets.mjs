@@ -11,11 +11,13 @@ const filesToCopy = [
     "src/manifest.json",
     "src/sidepanel.html",
     "src/sidepanel.css",
-    "src/rules.json"
+    "src/rules.json",
+    "src/icons/icon_16.png",
+    "src/icons/icon_32.png",
+    "src/icons/icon_48.png",
+    "src/icons/icon_128.png"
 ];
 
 for (const relativePath of filesToCopy) {
-    cpSync(resolve(rootDir, relativePath), resolve(distDir, relativePath.replace(/^src\//, "")));
+    cpSync(resolve(rootDir, relativePath), resolve(distDir, relativePath.replace(/.*\//, "")));
 }
-
-cpSync(resolve(rootDir, "src/icons"), distDir, { recursive: true });
