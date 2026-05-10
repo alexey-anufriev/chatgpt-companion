@@ -1,24 +1,48 @@
+/**
+ * Stamp of the last prompt written into the composer, used as an in-page guard
+ * against duplicate insertions from repeated storage notifications.
+ */
 let lastAppliedStamp: number | null = null;
+
+/**
+ * Prevents duplicate storage listeners if the script is evaluated more than
+ * once in the same ChatGPT document.
+ */
 let isStorageListenerAttached = false;
 
+/**
+ * Starts the ChatGPT content-script integration once the script is evaluated.
+ */
 void bootstrap();
 
+/**
+ * Prepares the ChatGPT page integration and applies any prompt for the current
+ * extension session once the composer is available.
+ */
 async function bootstrap(): Promise<void> {
     console.log("[discuss-with-chatgpt-ext] bootstrapper loaded", location.href);
 
     await waitForDocumentReady();
 
+    // the listener must be attached before the initial storage read so a prompt
+    // update cannot be missed while ChatGPT is still loading
     attachStorageListenerOnce();
 
     await clearChatGPTNullThreadDraft();
     await tryApplyLatestPrompt();
 }
 
+/**
+ * Attaches a single storage listener that reacts to prompt updates and side
+ * panel close notifications.
+ */
 function attachStorageListenerOnce(): void {
     if (isStorageListenerAttached) {
         return;
     }
 
+    // chatGPT integration only cares about extension-local storage; synced or
+    // managed storage updates are ignored
     chrome.storage.onChanged.addListener(async (changes, areaName) => {
         if (areaName !== "local") {
             return;
@@ -36,6 +60,10 @@ function attachStorageListenerOnce(): void {
     isStorageListenerAttached = true;
 }
 
+/**
+ * Reads the current session prompt from extension storage, inserts it into the
+ * ChatGPT composer, and marks it as consumed.
+ */
 async function tryApplyLatestPrompt(): Promise<void> {
     const currentSessionId = getCurrentSessionId();
     if (!currentSessionId) {
@@ -49,6 +77,8 @@ async function tryApplyLatestPrompt(): Promise<void> {
         return;
     }
 
+    // storage updates can arrive more than once for the same state; the stamp
+    // guard avoids retyping an already-applied prompt
     if (lastAppliedStamp === discussion.stamp) {
         return;
     }
@@ -62,6 +92,8 @@ async function tryApplyLatestPrompt(): Promise<void> {
     insertPrompt(input, discussion.prompt);
     lastAppliedStamp = discussion.stamp;
 
+    // mark the prompt consumed in extension storage so later page events do not
+    // replay it into the composer
     const nextDiscussions = { ...(data.discussions ?? {}) };
     nextDiscussions[currentSessionId] = {
         ...discussion,
@@ -79,6 +111,10 @@ async function tryApplyLatestPrompt(): Promise<void> {
     }
 }
 
+/**
+ * Removes ChatGPT's transient null-thread draft when the matching extension
+ * session is closed.
+ */
 async function clearChatGPTNullThreadDraft(): Promise<void> {
     const { closeDiscussionSessionId } = (await chrome.storage.local.get(
         "closeDiscussionSessionId"
@@ -89,6 +125,7 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
         return;
     }
 
+    // chatGPT stores unsent new-thread composer drafts under this app-local key
     const key = "oai/apps/conversationDrafts";
 
     try {
@@ -105,6 +142,8 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
             return;
         }
 
+        // only remove ChatGPT's placeholder thread draft; leave real draft
+        // entries untouched
         const nextDrafts = parsed.drafts.filter((draft) => draft.id !== "null_thread");
 
         if (nextDrafts.length === parsed.drafts.length) {
@@ -126,6 +165,8 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
     } catch (error) {
         console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", error);
     } finally {
+        // clear the close signal only if this page still owns it; a newer close
+        // event for another session should remain visible to that tab
         const latest = (await chrome.storage.local.get("closeDiscussionSessionId")) as StorageShape;
         if (latest.closeDiscussionSessionId === currentSessionId) {
             await chrome.storage.local.set({
@@ -135,6 +176,9 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
     }
 }
 
+/**
+ * Extracts the extension session id from ChatGPT's location hash.
+ */
 function getCurrentSessionId(): string | null {
     const hash = window.location.hash.startsWith("#")
         ? window.location.hash.slice(1)
@@ -144,6 +188,9 @@ function getCurrentSessionId(): string | null {
     return params.get("dwc_session");
 }
 
+/**
+ * Resolves when the ChatGPT document is ready enough for DOM queries.
+ */
 async function waitForDocumentReady(): Promise<void> {
     if (document.readyState === "complete" || document.readyState === "interactive") {
         return;
@@ -154,6 +201,10 @@ async function waitForDocumentReady(): Promise<void> {
     });
 }
 
+/**
+ * Polls known ChatGPT composer selectors until a visible input is found or the
+ * timeout expires.
+ */
 async function waitForComposer(
     timeoutMs = 15000
 ): Promise<HTMLElement | HTMLTextAreaElement | null> {
@@ -168,6 +219,8 @@ async function waitForComposer(
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
+        // chatGPT has used multiple composer DOM shapes, so try selectors from
+        // most specific/current to broader fallbacks
         for (const selector of selectors) {
             const el = document.querySelector(selector);
             if (el instanceof HTMLElement && isVisible(el)) {
@@ -181,12 +234,18 @@ async function waitForComposer(
     return null;
 }
 
+/**
+ * Inserts text into either ChatGPT composer implementation and dispatches the
+ * input events React expects.
+ */
 function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string): void {
     element.focus();
 
     const isClear = text.length === 0;
 
     if (element instanceof HTMLTextAreaElement) {
+        // use the native setter so React observes the value change as if the
+        // user typed into the textarea
         const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
         descriptor?.set?.call(element, text);
         element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -196,6 +255,7 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
 
     replaceContentEditableText(element, text);
 
+    // dispatch the input shape expected by contenteditable composer handlers
     element.dispatchEvent(
         new InputEvent("input", {
             bubbles: true,
@@ -206,6 +266,10 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
     );
 }
 
+/**
+ * Replaces contenteditable composer contents while preserving line breaks and
+ * placing the caret at the end.
+ */
 function replaceContentEditableText(element: HTMLElement, text: string): void {
     const selection = window.getSelection();
     const range = document.createRange();
@@ -213,6 +277,7 @@ function replaceContentEditableText(element: HTMLElement, text: string): void {
     element.replaceChildren();
 
     if (text.length > 0) {
+        // contenteditable composers need explicit BR nodes to preserve newlines
         const lines = text.split("\n");
         lines.forEach((line, index) => {
             if (index > 0) {
@@ -223,17 +288,25 @@ function replaceContentEditableText(element: HTMLElement, text: string): void {
         });
     }
 
+    // move the caret after the inserted text so the composer behaves like a
+    // normal paste/type operation
     range.selectNodeContents(element);
     range.collapse(false);
     selection?.removeAllRanges();
     selection?.addRange(range);
 }
 
+/**
+ * Checks whether an element has a measurable rendered box.
+ */
 function isVisible(el: HTMLElement): boolean {
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
 }
 
+/**
+ * Delays async polling loops.
+ */
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
