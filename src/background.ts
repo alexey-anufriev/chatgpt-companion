@@ -1,19 +1,18 @@
 /**
- * Context menu identifier used to distinguish this extension's menu action
+ * Context menu identifiers used to distinguish this extension's menu actions
  * from any other Chrome context menu events.
  */
-const MENU_ID = "discuss-in-chatgpt";
+const MENU_PARENT_ID = "discuss-in-chatgpt";
+const MENU_ORIGINAL_LANGUAGE_ID = "discuss-in-chatgpt-original-language";
+const MENU_PREFERRED_LANGUAGE_PREFIX = "discuss-in-chatgpt-preferred-language-";
+const DEFAULT_PREFERRED_LANGUAGE = "English";
 
 /**
  * Registers the context menu after install and enables side panel support for
  * tabs that already exist.
  */
 chrome.runtime.onInstalled.addListener(() => {
-    chrome.contextMenus.create({
-        id: MENU_ID,
-        title: "Discuss with ChatGPT",
-        contexts: ["page", "selection"]
-    });
+    createContextMenus();
 
     void ensurePanelConfiguredForAllTabs();
 });
@@ -23,6 +22,7 @@ chrome.runtime.onInstalled.addListener(() => {
  */
 chrome.runtime.onStartup.addListener(() => {
     void restoreMappingsAndConfigurePanels();
+    createContextMenus();
 });
 
 /**
@@ -70,11 +70,22 @@ chrome.action.onClicked.addListener((tab) => {
  * discussion session before creating a new one from the clicked page.
  */
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId !== MENU_ID || !tab?.id) {
+    const menuItemId = String(info.menuItemId);
+
+    if (!isDiscussionMenuItem(menuItemId) || !tab?.id) {
         return;
     }
 
-    void handleContextMenuClick(info, tab);
+    void handleContextMenuClick(info, tab, menuItemId);
+});
+
+/**
+ * Keeps preferred-language context menu items aligned with settings.
+ */
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes["preferredLanguage"]) {
+        createContextMenus();
+    }
 });
 
 /**
@@ -118,6 +129,65 @@ async function ensurePanelConfiguredForAllTabs(): Promise<void> {
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] ensurePanelConfiguredForAllTabs failed", error);
     }
+}
+
+/**
+ * Registers the parent context menu and its language-specific child actions.
+ */
+function createContextMenus(): void {
+    chrome.contextMenus.removeAll(() => {
+        void createContextMenusAfterClear();
+    });
+}
+
+/**
+ * Builds context menu items after Chrome has removed the previous tree.
+ */
+async function createContextMenusAfterClear(): Promise<void> {
+    const preferredLanguages = await getPreferredLanguages();
+
+    chrome.contextMenus.create({
+        id: MENU_PARENT_ID,
+        title: "Discuss with ChatGPT",
+        contexts: ["page", "selection"]
+    });
+
+    chrome.contextMenus.create({
+        id: MENU_ORIGINAL_LANGUAGE_ID,
+        parentId: MENU_PARENT_ID,
+        title: "In original language",
+        contexts: ["page", "selection"]
+    });
+
+    preferredLanguages.forEach((language, index) => {
+        chrome.contextMenus.create({
+            id: `${MENU_PREFERRED_LANGUAGE_PREFIX}${index}`,
+            parentId: MENU_PARENT_ID,
+            title: `In ${language}`,
+            contexts: ["page", "selection"]
+        });
+    });
+}
+
+/**
+ * Returns whether the clicked context menu item belongs to this extension.
+ */
+function isDiscussionMenuItem(menuItemId: string): boolean {
+    return menuItemId === MENU_ORIGINAL_LANGUAGE_ID || menuItemId.startsWith(MENU_PREFERRED_LANGUAGE_PREFIX);
+}
+
+/**
+ * Resolves the preferred response language represented by a submenu id.
+ */
+async function getMenuPreferredLanguage(menuItemId: string): Promise<string | undefined> {
+    if (menuItemId === MENU_ORIGINAL_LANGUAGE_ID) {
+        return undefined;
+    }
+
+    const index = Number(menuItemId.slice(MENU_PREFERRED_LANGUAGE_PREFIX.length));
+    const preferredLanguages = await getPreferredLanguages();
+
+    return Number.isInteger(index) ? preferredLanguages[index] : undefined;
 }
 
 /**
@@ -260,7 +330,8 @@ function openDiscussionPanel(tabId: number): void {
  */
 async function handleContextMenuClick(
     info: chrome.contextMenus.OnClickData,
-    tab: chrome.tabs.Tab
+    tab: chrome.tabs.Tab,
+    menuItemId: string
 ): Promise<void> {
     if (!tab.id) {
         return;
@@ -272,7 +343,8 @@ async function handleContextMenuClick(
         return;
     }
 
-    await createDiscussionFromClick(info, tab);
+    const preferredLanguage = await getMenuPreferredLanguage(menuItemId);
+    await createDiscussionFromClick(info, tab, preferredLanguage);
 }
 
 /**
@@ -309,6 +381,7 @@ async function clearDataAndCache(): Promise<void> {
     await chrome.storage.local.clear();
     await clearSessionStorage();
     await clearCacheStorage();
+    createContextMenus();
     await ensurePanelConfiguredForAllTabs();
 }
 
@@ -338,7 +411,8 @@ async function clearCacheStorage(): Promise<void> {
  */
 async function createDiscussionFromClick(
     info: chrome.contextMenus.OnClickData,
-    tab: chrome.tabs.Tab
+    tab: chrome.tabs.Tab,
+    preferredLanguage?: string
 ): Promise<void> {
     if (!tab.id) {
         return;
@@ -357,7 +431,7 @@ async function createDiscussionFromClick(
             return;
         }
 
-        const prompt = buildPrompt(result);
+        const prompt = buildPrompt(result, preferredLanguage);
         const sessionId = crypto.randomUUID();
         const storage = (await chrome.storage.local.get([
             "discussions",
@@ -426,7 +500,7 @@ function collectPageData(selectionText: string): DiscussSource {
 /**
  * Builds the prompt inserted into ChatGPT from the selected page metadata.
  */
-function buildPrompt(data: DiscussSource): string {
+function buildPrompt(data: DiscussSource, preferredLanguage?: string): string {
     const hasSelection = data.selection && data.selection.trim().length > 0;
 
     const parts: string[] = [
@@ -454,10 +528,45 @@ function buildPrompt(data: DiscussSource): string {
         paragraph("- Identify the main idea"),
         paragraph("- Highlight what is actually important"),
         paragraph("- Point out weak or questionable parts"),
-        paragraph("Use the language of the original material for your response.")
+        paragraph(getResponseLanguageInstruction(preferredLanguage))
     );
 
     return parts.join("\n");
+}
+
+/**
+ * Returns the currently configured preferred response languages.
+ */
+async function getPreferredLanguages(): Promise<string[]> {
+    const storage = (await chrome.storage.local.get("preferredLanguage")) as StorageShape;
+    return normalizePreferredLanguages(storage.preferredLanguage);
+}
+
+/**
+ * Converts stored or user-entered language values into usable menu labels.
+ */
+function normalizePreferredLanguages(value: unknown): string[] {
+    if (typeof value !== "string") {
+        return [DEFAULT_PREFERRED_LANGUAGE];
+    }
+
+    const languages = value
+        .split(",")
+        .map((language) => language.trim())
+        .filter((language) => language.length > 0);
+
+    return languages.length > 0 ? languages : [DEFAULT_PREFERRED_LANGUAGE];
+}
+
+/**
+ * Builds the prompt instruction for original-language or preferred-language replies.
+ */
+function getResponseLanguageInstruction(preferredLanguage?: string): string {
+    if (preferredLanguage) {
+        return `Use ${preferredLanguage} for your response.`;
+    }
+
+    return "Use the language of the original material for your response.";
 }
 
 /**

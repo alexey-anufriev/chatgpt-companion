@@ -12,7 +12,15 @@
 </head>
 <body>
 <main class="settings">
-    <h1>ChatGPT Companion Settings</h1>
+    <div class="settingsHeader">
+        <h1>ChatGPT Companion Settings</h1>
+        <button id="saveSettingsBtn" type="button" disabled>Save</button>
+    </div>
+
+    <section class="preferences">
+        <label for="preferredLanguage">Preferred languages, comma separated</label>
+        <input id="preferredLanguage" type="text" autocomplete="off" />
+    </section>
 
     <section class="sessions">
         <div class="sessionsHeader">

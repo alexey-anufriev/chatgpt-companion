@@ -1,11 +1,26 @@
+const OPTIONS_DEFAULT_PREFERRED_LANGUAGE = "English";
+
+const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
+const saveSettingsBtn = document.getElementById("saveSettingsBtn") as HTMLButtonElement | null;
 const clearDataBtn = document.getElementById("clearDataBtn") as HTMLButtonElement | null;
 const statusEl = document.getElementById("status") as HTMLParagraphElement | null;
 const sessionsListEl = document.getElementById("sessionsList") as HTMLDivElement | null;
 const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElement | null;
 
-if (!clearDataBtn || !statusEl || !sessionsListEl || !sessionCountEl) {
+let savedPreferredLanguage = OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+let isSavingSettings = false;
+
+if (!preferredLanguageInput || !saveSettingsBtn || !clearDataBtn || !statusEl || !sessionsListEl || !sessionCountEl) {
     console.error("[discuss-with-chatgpt-ext] options DOM elements not found");
 } else {
+    preferredLanguageInput.addEventListener("input", () => {
+        updateSaveButtonState();
+    });
+
+    saveSettingsBtn.addEventListener("click", () => {
+        void savePreferredLanguage();
+    });
+
     clearDataBtn.addEventListener("click", () => {
         void requestClearDataAndCache();
     });
@@ -14,9 +29,56 @@ if (!clearDataBtn || !statusEl || !sessionsListEl || !sessionCountEl) {
         if (areaName === "local" && (changes["discussions"] || changes["tabSessionIds"])) {
             void renderPersistedSessions();
         }
+
+        if (areaName === "local" && changes["preferredLanguage"]) {
+            renderPreferredLanguage(changes["preferredLanguage"].newValue);
+        }
     });
 
+    void loadPreferredLanguage();
     void renderPersistedSessions();
+}
+
+async function loadPreferredLanguage(): Promise<void> {
+    const storage = (await chrome.storage.local.get("preferredLanguage")) as StorageShape;
+    renderPreferredLanguage(storage.preferredLanguage);
+}
+
+function renderPreferredLanguage(preferredLanguage: unknown): void {
+    if (!preferredLanguageInput) {
+        return;
+    }
+
+    savedPreferredLanguage = normalizeOptionsPreferredLanguages(preferredLanguage);
+    preferredLanguageInput.value = savedPreferredLanguage;
+    updateSaveButtonState();
+}
+
+async function savePreferredLanguage(): Promise<void> {
+    if (!preferredLanguageInput || !saveSettingsBtn || !statusEl) {
+        return;
+    }
+
+    const nextPreferredLanguage = normalizeOptionsPreferredLanguages(preferredLanguageInput.value);
+
+    isSavingSettings = true;
+    updateSaveButtonState();
+    statusEl.textContent = "Saving settings...";
+
+    try {
+        await chrome.storage.local.set({
+            preferredLanguage: nextPreferredLanguage
+        });
+        savedPreferredLanguage = nextPreferredLanguage;
+        preferredLanguageInput.value = nextPreferredLanguage;
+        statusEl.textContent = "Settings saved.";
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] save settings failed", error);
+        statusEl.textContent = error instanceof Error ? error.message : "Save operation failed.";
+    } finally {
+        isSavingSettings = false;
+        updateSaveButtonState();
+    }
 }
 
 async function requestClearDataAndCache(): Promise<void> {
@@ -37,6 +99,7 @@ async function requestClearDataAndCache(): Promise<void> {
         }
 
         statusEl.textContent = "Data and cache cleared.";
+        await loadPreferredLanguage();
         await renderPersistedSessions();
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] clear data request failed", error);
@@ -137,4 +200,26 @@ function getMappedTabIds(sessionId: string, tabSessionIds: Record<string, string
     return Object.entries(tabSessionIds)
         .filter(([, mappedSessionId]) => mappedSessionId === sessionId)
         .map(([tabId]) => tabId);
+}
+
+function normalizeOptionsPreferredLanguages(value: unknown): string {
+    if (typeof value !== "string") {
+        return OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+    }
+
+    const languages = value
+        .split(",")
+        .map((language) => language.trim())
+        .filter((language) => language.length > 0);
+
+    return languages.length > 0 ? languages.join(", ") : OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+}
+
+function updateSaveButtonState(): void {
+    if (!preferredLanguageInput || !saveSettingsBtn) {
+        return;
+    }
+
+    const currentPreferredLanguage = normalizeOptionsPreferredLanguages(preferredLanguageInput.value);
+    saveSettingsBtn.disabled = isSavingSettings || currentPreferredLanguage === savedPreferredLanguage;
 }

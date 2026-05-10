@@ -17,6 +17,7 @@ type StorageShape = {
     tabSessionIds?: Record<string, string>;
     closeDiscussionSessionId?: string;
     clearAllDiscussionDraftsStamp?: number;
+    preferredLanguage?: string;
 };
 
 type RuntimeMessage = {

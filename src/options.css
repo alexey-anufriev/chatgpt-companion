@@ -12,10 +12,37 @@ body {
     margin: 48px auto;
 }
 
+.settingsHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
 h1 {
-    margin: 0 0 24px;
+    margin: 0;
     font-size: 22px;
     font-weight: 600;
+}
+
+.preferences {
+    display: grid;
+    gap: 8px;
+}
+
+.preferences label {
+    font-weight: 600;
+}
+
+.preferences input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #c4c7c5;
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: #202124;
+    font: inherit;
 }
 
 button {
@@ -33,7 +60,7 @@ button:hover:not(:disabled) {
 
 button:disabled {
     color: #8a8f94;
-    cursor: wait;
+    cursor: default;
 }
 
 .status {
