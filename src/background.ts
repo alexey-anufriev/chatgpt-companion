@@ -285,7 +285,7 @@ async function createContextMenusAfterClear(): Promise<void> {
     chrome.contextMenus.create({
         id: MENU_PARENT_ID,
         title: "Discuss with ChatGPT",
-        contexts: ["page", "selection"]
+        contexts: ["page", "selection", "link"]
     });
 
     promptTemplates.forEach((promptTemplate, promptTemplateIndex) => {
@@ -293,7 +293,7 @@ async function createContextMenusAfterClear(): Promise<void> {
             id: `${MENU_TEMPLATE_PREFIX}${promptTemplateIndex}`,
             parentId: MENU_PARENT_ID,
             title: `Using "${promptTemplate.name}" template`,
-            contexts: ["page", "selection"]
+            contexts: ["page", "selection", "link"]
         });
     });
 }
@@ -470,20 +470,27 @@ async function handleContextMenuClick(
 
     const promptTemplate = await getMenuPromptTemplate(menuItemId);
     const preferredLanguage = await getPreferredLanguage();
+    const requestedSourceUrl = info.linkUrl ?? tab.url ?? "";
     const existingDiscussion = await getDiscussionForTab(tab.id);
 
-    if (existingDiscussion) {
+    if (existingDiscussion && existingDiscussion.source.url === requestedSourceUrl) {
         await handleExistingDiscussionLanguage(
             tab.id,
             info.selectionText ?? "",
             existingDiscussion,
             promptTemplate,
-            getRequestedResponseLanguage(promptTemplate, preferredLanguage)
+            getRequestedResponseLanguage(promptTemplate, preferredLanguage),
+            info.linkUrl
         );
         return;
     }
 
     await clearPendingLanguageMismatch(tab.id);
+    if (info.linkUrl) {
+        await createDiscussionFromLink(tab, info.linkUrl, info.selectionText ?? "", promptTemplate);
+        return;
+    }
+
     await createDiscussionFromTab(tab, info.selectionText ?? "", promptTemplate);
 }
 
@@ -559,7 +566,8 @@ async function handleExistingDiscussionLanguage(
     selectionText: string,
     discussion: DiscussionState,
     promptTemplate: PromptTemplate,
-    requestedLanguage: string
+    requestedLanguage: string,
+    requestedLinkUrl?: string
 ): Promise<void> {
     const currentLanguage = discussion.responseLanguage ?? ORIGINAL_LANGUAGE_LABEL;
     const currentPromptTemplateName = discussion.promptTemplateName ?? DEFAULT_PROMPT_TEMPLATE_NAME;
@@ -576,6 +584,7 @@ async function handleExistingDiscussionLanguage(
         requestedLanguage,
         requestedPromptTemplateId: promptTemplate.id,
         requestedPromptTemplateName: promptTemplate.name,
+        requestedLinkUrl,
         selectionText,
         stamp: Date.now()
     });
@@ -595,11 +604,10 @@ async function restartDiscussion(message: Partial<RuntimeMessage>): Promise<void
 
     const tab = await chrome.tabs.get(message.tabId);
     const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
-    const restarted = await createDiscussionFromTab(
-        tab,
-        message.selectionText ?? "",
-        promptTemplate
-    );
+    const restarted = message.requestedLinkUrl ?
+        await createDiscussionFromLink(tab, message.requestedLinkUrl, message.selectionText ?? "", promptTemplate) :
+        await createDiscussionFromTab(tab, message.selectionText ?? "", promptTemplate);
+
     if (!restarted) {
         throw new Error("Restart operation failed");
     }
@@ -664,46 +672,89 @@ async function createDiscussionFromTab(
             return false;
         }
 
-        const preferredLanguage = await getPreferredLanguage();
-        const prompt = buildPrompt(result, promptTemplate, preferredLanguage);
-        const sessionId = crypto.randomUUID();
-        const storage = (await chrome.storage.local.get([
-            "discussions",
-            "tabSessionIds"
-        ])) as StorageShape;
-        const previousSessionId = storage.tabSessionIds?.[String(tab.id)];
-        const discussions = { ...(storage.discussions ?? {}) };
-        const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
-
-        // replace the tab's prior session so stale prompts are not retained
-        if (previousSessionId) {
-            delete discussions[previousSessionId];
-        }
-
-        discussions[sessionId] = {
-            prompt,
-            stamp: Date.now(),
-            source: result,
-            consumed: false,
-            responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
-            promptTemplateName: promptTemplate.name
-        };
-        tabSessionIds[String(tab.id)] = sessionId;
-
-        // clearing closeDiscussionSessionId prevents an older close event from
-        // erasing the freshly inserted ChatGPT draft
-        await chrome.storage.local.set({
-            discussions,
-            tabSessionIds,
-            closeDiscussionSessionId: undefined
-        });
-
-        console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId, tabId: tab.id });
-        return true;
+        return await createDiscussionFromSource(tab.id, result, promptTemplate);
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] createDiscussionFromTab failed", error);
         return false;
     }
+}
+
+/**
+ * Collects linked page metadata from the clicked tab and stores a discussion.
+ */
+async function createDiscussionFromLink(
+    tab: chrome.tabs.Tab,
+    linkUrl: string,
+    selectionText: string,
+    promptTemplate: PromptTemplate
+): Promise<boolean> {
+    if (!tab.id) {
+        return false;
+    }
+
+    try {
+        const injectionResults = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: collectLinkData,
+            args: [linkUrl, selectionText]
+        });
+
+        const result = injectionResults[0]?.result;
+        if (!result) {
+            return false;
+        }
+
+        return await createDiscussionFromSource(tab.id, result, promptTemplate);
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] createDiscussionFromLink failed", error);
+        return false;
+    }
+}
+
+/**
+ * Builds and stores one discussion source for the side panel/content script pair.
+ */
+async function createDiscussionFromSource(
+    tabId: number,
+    source: DiscussSource,
+    promptTemplate: PromptTemplate
+): Promise<boolean> {
+    const preferredLanguage = await getPreferredLanguage();
+    const prompt = buildPrompt(source, promptTemplate, preferredLanguage);
+    const sessionId = crypto.randomUUID();
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const previousSessionId = storage.tabSessionIds?.[String(tabId)];
+    const discussions = { ...(storage.discussions ?? {}) };
+    const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+
+    // replace the tab's prior session so stale prompts are not retained
+    if (previousSessionId) {
+        delete discussions[previousSessionId];
+    }
+
+    discussions[sessionId] = {
+        prompt,
+        stamp: Date.now(),
+        source,
+        consumed: false,
+        responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
+        promptTemplateName: promptTemplate.name
+    };
+    tabSessionIds[String(tabId)] = sessionId;
+
+    // clearing closeDiscussionSessionId prevents an older close event from
+    // erasing the freshly inserted ChatGPT draft
+    await chrome.storage.local.set({
+        discussions,
+        tabSessionIds,
+        closeDiscussionSessionId: undefined
+    });
+
+    console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId, tabId });
+    return true;
 }
 
 /**
@@ -731,6 +782,31 @@ function collectPageData(selectionText: string): DiscussSource {
     return {
         title: document.title || "",
         url: location.href || "",
+        selection: selectionText || ""
+    };
+}
+
+/**
+ * Runs in the page context and returns source metadata for a clicked link.
+ */
+function collectLinkData(linkUrl: string, selectionText: string): DiscussSource {
+    const link = Array.from(document.links).find((item) => item.href === linkUrl);
+    let fallbackTitle = linkUrl;
+
+    try {
+        fallbackTitle = new URL(linkUrl).hostname;
+    } catch {
+        fallbackTitle = linkUrl;
+    }
+
+    const linkTitle = link?.getAttribute("title")?.trim() ||
+        link?.getAttribute("aria-label")?.trim() ||
+        link?.textContent?.trim() ||
+        fallbackTitle;
+
+    return {
+        title: linkTitle,
+        url: linkUrl,
         selection: selectionText || ""
     };
 }

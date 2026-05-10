@@ -59,6 +59,8 @@ type PendingLanguageMismatch = {
     requestedPromptTemplateId: string;
     /** display name for the selected prompt template */
     requestedPromptTemplateName: string;
+    /** linked page URL to reuse if the user restarts a linked discussion */
+    requestedLinkUrl?: string;
     /** selection text to reuse if the user restarts the discussion */
     selectionText: string;
     /** creation timestamp used to distinguish newer prompts */
@@ -102,6 +104,8 @@ type RuntimeMessage =
         tabId: number;
         /** prompt template id for the restarted discussion */
         requestedPromptTemplateId: string;
+        /** linked page URL to use when restarting a linked discussion */
+        requestedLinkUrl?: string;
         /** source text to pass into the regenerated prompt */
         selectionText: string;
     };

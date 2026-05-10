@@ -230,6 +230,7 @@ async function restartPanelDiscussion(): Promise<void> {
             type: "restart-discussion",
             tabId: mismatch.tabId,
             requestedPromptTemplateId: mismatch.requestedPromptTemplateId,
+            requestedLinkUrl: mismatch.requestedLinkUrl,
             selectionText: mismatch.selectionText
         });
 
