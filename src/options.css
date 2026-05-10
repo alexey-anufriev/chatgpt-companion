@@ -31,10 +31,6 @@ h1 {
     gap: 8px;
 }
 
-.preferences label {
-    font-weight: 600;
-}
-
 .preferences input {
     width: 100%;
     box-sizing: border-box;
@@ -43,6 +39,58 @@ h1 {
     padding: 8px 10px;
     color: #202124;
     font: inherit;
+}
+
+.promptTemplates {
+    margin-top: 32px;
+}
+
+.promptTemplatesHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.promptTemplatesList {
+    display: grid;
+    gap: 10px;
+}
+
+.promptTemplate {
+    display: grid;
+    gap: 8px;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+}
+
+.promptTemplateHeader {
+    display: flex;
+    gap: 8px;
+}
+
+.promptTemplateHeader input {
+    flex: 1;
+    min-width: 0;
+}
+
+.promptTemplate input,
+.promptTemplate textarea {
+    box-sizing: border-box;
+    border: 1px solid #c4c7c5;
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: #202124;
+    font: inherit;
+}
+
+.promptTemplate textarea {
+    width: 100%;
+    min-height: 220px;
+    resize: vertical;
 }
 
 button {
@@ -82,7 +130,8 @@ button:disabled {
     margin-bottom: 12px;
 }
 
-h2 {
+h2,
+.preferences label {
     margin: 0;
     font-size: 16px;
     font-weight: 600;

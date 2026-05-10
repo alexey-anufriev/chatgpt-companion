@@ -171,7 +171,7 @@ function attachEvents(): void {
 }
 
 /**
- * Renders a tab-scoped language mismatch prompt when one is pending.
+ * Renders a tab-scoped settings mismatch prompt when one is pending.
  */
 async function renderLanguageMismatchPrompt(): Promise<void> {
     if (!languageMismatchPrompt || !languageMismatchText) {
@@ -186,14 +186,18 @@ async function renderLanguageMismatchPrompt(): Promise<void> {
         return;
     }
 
+    const currentPromptTemplateName = mismatch.currentPromptTemplateName ?? "Default";
+
     languageMismatchText.textContent =
-        `Original session restored. It was started in ${mismatch.currentLanguage}, ` +
-        `but you selected ${mismatch.requestedLanguage}. Continue with this session or restart the discussion?`;
+        "Original discussion was started with " +
+        `${currentPromptTemplateName} (${mismatch.currentLanguage}), but you selected ` +
+        `${mismatch.requestedPromptTemplateName} (${mismatch.requestedLanguage}). ` +
+        "Continue with the original discussion or restart with the selected template?";
     languageMismatchPrompt.classList.remove("hidden");
 }
 
 /**
- * Clears this panel tab's pending language mismatch prompt.
+ * Clears this panel tab's pending settings mismatch prompt.
  */
 async function clearPanelLanguageMismatch(): Promise<void> {
     if (panelTabId === null) {
@@ -207,7 +211,7 @@ async function clearPanelLanguageMismatch(): Promise<void> {
 }
 
 /**
- * Replaces the restored session with a new discussion in the requested language.
+ * Replaces the restored session with a new discussion from the selected template.
  */
 async function restartPanelDiscussion(): Promise<void> {
     if (!restartSessionBtn) {
@@ -225,7 +229,7 @@ async function restartPanelDiscussion(): Promise<void> {
         const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
             type: "restart-discussion",
             tabId: mismatch.tabId,
-            requestedLanguage: mismatch.requestedLanguage,
+            requestedPromptTemplateId: mismatch.requestedPromptTemplateId,
             selectionText: mismatch.selectionText
         });
 
@@ -240,7 +244,7 @@ async function restartPanelDiscussion(): Promise<void> {
 }
 
 /**
- * Returns the pending language mismatch for this panel tab.
+ * Returns the pending settings mismatch for this panel tab.
  */
 async function getPanelLanguageMismatch(): Promise<PendingLanguageMismatch | null> {
     if (panelTabId === null) {
@@ -252,7 +256,7 @@ async function getPanelLanguageMismatch(): Promise<PendingLanguageMismatch | nul
 }
 
 /**
- * Removes this panel tab's language mismatch from a mismatch map.
+ * Removes this panel tab's settings mismatch from a mismatch map.
  */
 function removePanelLanguageMismatch(
     pendingLanguageMismatches: Record<string, PendingLanguageMismatch> | undefined

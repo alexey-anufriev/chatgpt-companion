@@ -18,8 +18,16 @@
     </div>
 
     <section class="preferences">
-        <label for="preferredLanguage">Preferred languages, comma separated</label>
+        <label for="preferredLanguage">Preferred language</label>
         <input id="preferredLanguage" type="text" autocomplete="off" />
+    </section>
+
+    <section class="promptTemplates">
+        <div class="promptTemplatesHeader">
+            <h2>Prompt Templates</h2>
+            <button id="addPromptTemplateBtn" type="button">Add Prompt</button>
+        </div>
+        <div id="promptTemplatesList" class="promptTemplatesList"></div>
     </section>
 
     <section class="sessions">

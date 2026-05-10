@@ -1,17 +1,94 @@
 const OPTIONS_DEFAULT_PREFERRED_LANGUAGE = "English";
 const OPTIONS_ORIGINAL_LANGUAGE_LABEL = "Original language";
+const OPTIONS_DEFAULT_PROMPT_TEMPLATE = [
+    "Hi, I’d like to discuss the following content.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Selected excerpt:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Please:",
+    "- Provide a concise summary",
+    "- Identify the main idea",
+    "- Highlight what is actually important",
+    "- Point out weak or questionable parts",
+    "Use the language of the original material for your response."
+].join("\n");
+const OPTIONS_DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
+    "Hi, I’d like to discuss the following content.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Selected excerpt:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Please:",
+    "- Provide a concise summary",
+    "- Identify the main idea",
+    "- Highlight what is actually important",
+    "- Point out weak or questionable parts",
+    "Use {preferred_language} for your response."
+].join("\n");
+const OPTIONS_SHORT_SUMMARY_PROMPT_TEMPLATE = [
+    "Compact the following material into a short summary.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Material:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Do not analyze or critique it.",
+    "Use the language of the original material for your response."
+].join("\n");
+const OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
+    "Compact the following material into a short summary.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Material:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Do not analyze or critique it.",
+    "Use {preferred_language} for your response."
+].join("\n");
+const OPTIONS_PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
+    "default",
+    "default-translated",
+    "short-summary"
+]);
 
 const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
 const saveSettingsBtn = document.getElementById("saveSettingsBtn") as HTMLButtonElement | null;
+const addPromptTemplateBtn = document.getElementById("addPromptTemplateBtn") as HTMLButtonElement | null;
+const promptTemplatesListEl = document.getElementById("promptTemplatesList") as HTMLDivElement | null;
 const clearDataBtn = document.getElementById("clearDataBtn") as HTMLButtonElement | null;
 const statusEl = document.getElementById("status") as HTMLParagraphElement | null;
 const sessionsListEl = document.getElementById("sessionsList") as HTMLDivElement | null;
 const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElement | null;
 
 let savedPreferredLanguage = OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+let savedPromptTemplates: PromptTemplate[] = [getOptionsDefaultPromptTemplate()];
 let isSavingSettings = false;
 
-if (!preferredLanguageInput || !saveSettingsBtn || !clearDataBtn || !statusEl || !sessionsListEl || !sessionCountEl) {
+if (
+    !preferredLanguageInput ||
+    !saveSettingsBtn ||
+    !addPromptTemplateBtn ||
+    !promptTemplatesListEl ||
+    !clearDataBtn ||
+    !statusEl ||
+    !sessionsListEl ||
+    !sessionCountEl
+) {
     console.error("[discuss-with-chatgpt-ext] options DOM elements not found");
 } else {
     preferredLanguageInput.addEventListener("input", () => {
@@ -19,7 +96,16 @@ if (!preferredLanguageInput || !saveSettingsBtn || !clearDataBtn || !statusEl ||
     });
 
     saveSettingsBtn.addEventListener("click", () => {
-        void savePreferredLanguage();
+        void saveSettings();
+    });
+
+    addPromptTemplateBtn.addEventListener("click", () => {
+        addPromptTemplateEditor({
+            id: crypto.randomUUID(),
+            name: "New Prompt",
+            template: OPTIONS_DEFAULT_PROMPT_TEMPLATE
+        });
+        updateSaveButtonState();
     });
 
     clearDataBtn.addEventListener("click", () => {
@@ -31,18 +117,23 @@ if (!preferredLanguageInput || !saveSettingsBtn || !clearDataBtn || !statusEl ||
             void renderPersistedSessions();
         }
 
-        if (areaName === "local" && changes["preferredLanguage"]) {
-            renderPreferredLanguage(changes["preferredLanguage"].newValue);
+        if (areaName === "local" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
+            void loadSettings();
         }
     });
 
-    void loadPreferredLanguage();
+    void loadSettings();
     void renderPersistedSessions();
 }
 
-async function loadPreferredLanguage(): Promise<void> {
-    const storage = (await chrome.storage.local.get("preferredLanguage")) as StorageShape;
+async function loadSettings(): Promise<void> {
+    const storage = (await chrome.storage.local.get([
+        "preferredLanguage",
+        "promptTemplates"
+    ])) as StorageShape;
+
     renderPreferredLanguage(storage.preferredLanguage);
+    renderPromptTemplates(storage.promptTemplates);
 }
 
 function renderPreferredLanguage(preferredLanguage: unknown): void {
@@ -50,17 +141,33 @@ function renderPreferredLanguage(preferredLanguage: unknown): void {
         return;
     }
 
-    savedPreferredLanguage = normalizeOptionsPreferredLanguages(preferredLanguage);
+    savedPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguage);
     preferredLanguageInput.value = savedPreferredLanguage;
     updateSaveButtonState();
 }
 
-async function savePreferredLanguage(): Promise<void> {
+function renderPromptTemplates(promptTemplates: unknown): void {
+    if (!promptTemplatesListEl) {
+        return;
+    }
+
+    savedPromptTemplates = normalizeOptionsPromptTemplates(promptTemplates);
+    promptTemplatesListEl.replaceChildren();
+
+    for (const promptTemplate of savedPromptTemplates) {
+        addPromptTemplateEditor(promptTemplate);
+    }
+
+    updateSaveButtonState();
+}
+
+async function saveSettings(): Promise<void> {
     if (!preferredLanguageInput || !saveSettingsBtn || !statusEl) {
         return;
     }
 
-    const nextPreferredLanguage = normalizeOptionsPreferredLanguages(preferredLanguageInput.value);
+    const nextPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguageInput.value);
+    const nextPromptTemplates = readPromptTemplateEditors();
 
     isSavingSettings = true;
     updateSaveButtonState();
@@ -68,10 +175,13 @@ async function savePreferredLanguage(): Promise<void> {
 
     try {
         await chrome.storage.local.set({
-            preferredLanguage: nextPreferredLanguage
+            preferredLanguage: nextPreferredLanguage,
+            promptTemplates: nextPromptTemplates
         });
         savedPreferredLanguage = nextPreferredLanguage;
+        savedPromptTemplates = nextPromptTemplates;
         preferredLanguageInput.value = nextPreferredLanguage;
+        renderPromptTemplates(nextPromptTemplates);
         statusEl.textContent = "Settings saved.";
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] save settings failed", error);
@@ -80,6 +190,74 @@ async function savePreferredLanguage(): Promise<void> {
         isSavingSettings = false;
         updateSaveButtonState();
     }
+}
+
+function addPromptTemplateEditor(promptTemplate: PromptTemplate): void {
+    if (!promptTemplatesListEl) {
+        return;
+    }
+
+    const row = document.createElement("article");
+    row.className = "promptTemplate";
+    row.dataset.templateId = promptTemplate.id;
+
+    const header = document.createElement("div");
+    header.className = "promptTemplateHeader";
+
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = promptTemplate.name;
+    nameInput.placeholder = "Prompt name";
+    nameInput.className = "promptTemplateName";
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.textContent = "Remove";
+
+    const templateInput = document.createElement("textarea");
+    templateInput.value = promptTemplate.template;
+    templateInput.className = "promptTemplateText";
+    templateInput.spellcheck = false;
+
+    nameInput.addEventListener("input", () => {
+        updateSaveButtonState();
+    });
+    templateInput.addEventListener("input", () => {
+        updateSaveButtonState();
+    });
+    removeButton.addEventListener("click", () => {
+        row.remove();
+        updateSaveButtonState();
+    });
+
+    header.append(nameInput, removeButton);
+    row.append(header, templateInput);
+    promptTemplatesListEl.append(row);
+}
+
+function readPromptTemplateEditors(): PromptTemplate[] {
+    if (!promptTemplatesListEl) {
+        return getOptionsDefaultPromptTemplates();
+    }
+
+    const promptTemplates = Array.from(promptTemplatesListEl.querySelectorAll<HTMLElement>(".promptTemplate"))
+        .map((row) => {
+            const name = row.querySelector<HTMLInputElement>(".promptTemplateName")?.value.trim() || "Prompt";
+            const template = sanitizeOptionsPromptTemplate(
+                row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value ?? ""
+            ) ||
+                OPTIONS_DEFAULT_PROMPT_TEMPLATE;
+
+            return {
+                id: row.dataset.templateId || crypto.randomUUID(),
+                name,
+                template
+            };
+        });
+
+    return promptTemplates.length > 0 ?
+        appendMissingOptionsTranslatedSummaryTemplate(promptTemplates) :
+        getOptionsDefaultPromptTemplates();
 }
 
 async function requestClearDataAndCache(): Promise<void> {
@@ -100,7 +278,7 @@ async function requestClearDataAndCache(): Promise<void> {
         }
 
         statusEl.textContent = "Data and cache cleared.";
-        await loadPreferredLanguage();
+        await loadSettings();
         await renderPersistedSessions();
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] clear data request failed", error);
@@ -189,6 +367,7 @@ function createSessionRow(
     meta.textContent = [
         `session: ${sessionId}`,
         `language: ${discussion.responseLanguage || OPTIONS_ORIGINAL_LANGUAGE_LABEL}`,
+        `prompt: ${discussion.promptTemplateName || "Default"}`,
         `updated: ${new Date(discussion.stamp).toLocaleString()}`,
         `consumed: ${discussion.consumed ? "yes" : "no"}`,
         `tab: ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
@@ -204,17 +383,106 @@ function getMappedTabIds(sessionId: string, tabSessionIds: Record<string, string
         .map(([tabId]) => tabId);
 }
 
-function normalizeOptionsPreferredLanguages(value: unknown): string {
+function normalizeOptionsPreferredLanguage(value: unknown): string {
     if (typeof value !== "string") {
         return OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
     }
 
-    const languages = value
-        .split(",")
-        .map((language) => language.trim())
-        .filter((language) => language.length > 0);
+    return value.trim() || OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+}
 
-    return languages.length > 0 ? languages.join(", ") : OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
+    if (!Array.isArray(value)) {
+        return getOptionsDefaultPromptTemplates();
+    }
+
+    const promptTemplates = value
+        .filter((promptTemplate): promptTemplate is PromptTemplate => {
+            return typeof promptTemplate?.id === "string" &&
+                typeof promptTemplate?.name === "string" &&
+                typeof promptTemplate?.template === "string";
+        })
+        .map((promptTemplate) => ({
+            id: promptTemplate.id,
+            name: promptTemplate.name.trim() || "Prompt",
+            template: sanitizeOptionsPromptTemplate(promptTemplate.template) || OPTIONS_DEFAULT_PROMPT_TEMPLATE
+        }));
+
+    return promptTemplates.length > 0 ? promptTemplates : getOptionsDefaultPromptTemplates();
+}
+
+function getOptionsDefaultPromptTemplate(): PromptTemplate {
+    return getOptionsDefaultPromptTemplates()[0];
+}
+
+function getOptionsDefaultPromptTemplates(): PromptTemplate[] {
+    return [
+        {
+            id: "default",
+            name: "Default",
+            template: OPTIONS_DEFAULT_PROMPT_TEMPLATE
+        },
+        {
+            id: "default-translated",
+            name: "Default translated",
+            template: OPTIONS_DEFAULT_TRANSLATED_PROMPT_TEMPLATE
+        },
+        {
+            id: "short-summary",
+            name: "Short summary",
+            template: OPTIONS_SHORT_SUMMARY_PROMPT_TEMPLATE
+        },
+        {
+            id: "short-summary-translated",
+            name: "Short summary translated",
+            template: OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
+        }
+    ];
+}
+
+function appendMissingOptionsTranslatedSummaryTemplate(promptTemplates: PromptTemplate[]): PromptTemplate[] {
+    const hasOlderBuiltInTemplate = promptTemplates.some((promptTemplate) => {
+        return OPTIONS_PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY.has(promptTemplate.id);
+    });
+    const hasTranslatedSummaryTemplate = promptTemplates.some((promptTemplate) => {
+        return promptTemplate.id === "short-summary-translated";
+    });
+
+    if (!hasOlderBuiltInTemplate || hasTranslatedSummaryTemplate) {
+        return promptTemplates;
+    }
+
+    return [
+        ...promptTemplates,
+        {
+            id: "short-summary-translated",
+            name: "Short summary translated",
+            template: OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
+        }
+    ];
+}
+
+function sanitizeOptionsPromptTemplate(template: string): string {
+    return addSelectionConditionalsToLegacyOptionsTemplate(template)
+        .replace(/\{response_language_instruction}/g, "")
+        .replace(/\{response_language}/g, "")
+        .trim();
+}
+
+function addSelectionConditionalsToLegacyOptionsTemplate(template: string): string {
+    if (template.includes("{if selected_text}")) {
+        return template;
+    }
+
+    return template
+        .replace(
+            "Selected excerpt:\n{selected_text}",
+            "{if selected_text}\nSelected excerpt:\n{selected_text}\n{/if}"
+        )
+        .replace(
+            "Material:\n{selected_text}",
+            "{if selected_text}\nMaterial:\n{selected_text}\n{/if}"
+        );
 }
 
 function updateSaveButtonState(): void {
@@ -222,6 +490,18 @@ function updateSaveButtonState(): void {
         return;
     }
 
-    const currentPreferredLanguage = normalizeOptionsPreferredLanguages(preferredLanguageInput.value);
-    saveSettingsBtn.disabled = isSavingSettings || currentPreferredLanguage === savedPreferredLanguage;
+    const currentPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguageInput.value);
+    const promptTemplatesChanged = serializePromptTemplates(readPromptTemplateEditors()) !==
+        serializePromptTemplates(savedPromptTemplates);
+
+    saveSettingsBtn.disabled = isSavingSettings ||
+        (currentPreferredLanguage === savedPreferredLanguage && !promptTemplatesChanged);
+}
+
+function serializePromptTemplates(promptTemplates: PromptTemplate[]): string {
+    return JSON.stringify(promptTemplates.map((promptTemplate) => ({
+        id: promptTemplate.id,
+        name: promptTemplate.name,
+        template: promptTemplate.template
+    })));
 }

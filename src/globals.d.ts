@@ -26,19 +26,39 @@ type DiscussionState = {
     chatUrl?: string;
     /** response language requested when this discussion was created */
     responseLanguage?: string;
+    /** prompt template name used when this discussion was created */
+    promptTemplateName?: string;
 };
 
 /**
- * Tab-scoped decision shown when a restored session language differs from the
- * newly selected menu language.
+ * User-editable prompt template stored in extension settings.
+ */
+type PromptTemplate = {
+    /** stable id used by settings and context menu parsing */
+    id: string;
+    /** display name shown in settings and context menus */
+    name: string;
+    /** raw template text rendered with page, date, time, and preferred language macros */
+    template: string;
+};
+
+/**
+ * Tab-scoped decision shown when a restored session differs from the selected
+ * prompt settings.
  */
 type PendingLanguageMismatch = {
     /** source tab id that should show the mismatch prompt */
     tabId: number;
     /** language stored on the restored session */
     currentLanguage: string;
-    /** language selected from the context menu */
+    /** prompt template stored on the restored session */
+    currentPromptTemplateName?: string;
+    /** response language implied by the selected prompt template */
     requestedLanguage: string;
+    /** prompt template selected from the context menu */
+    requestedPromptTemplateId: string;
+    /** display name for the selected prompt template */
+    requestedPromptTemplateName: string;
     /** selection text to reuse if the user restarts the discussion */
     selectionText: string;
     /** creation timestamp used to distinguish newer prompts */
@@ -57,9 +77,11 @@ type StorageShape = {
     closeDiscussionSessionId?: string;
     /** timestamp used to ask content scripts to clear all extension drafts */
     clearAllDiscussionDraftsStamp?: number;
-    /** comma-separated preferred response languages */
+    /** preferred response language used by preferred-language templates */
     preferredLanguage?: string;
-    /** source tab id to pending language mismatch prompt */
+    /** stored prompt templates that override the hardcoded default */
+    promptTemplates?: PromptTemplate[];
+    /** source tab id to pending settings mismatch prompt */
     pendingLanguageMismatches?: Record<string, PendingLanguageMismatch>;
 };
 
@@ -72,12 +94,12 @@ type RuntimeMessage =
         type: "clear-data-and-cache";
     }
     | {
-        /** replace the current tab discussion with a requested language */
+        /** replace the current tab discussion with selected prompt settings */
         type: "restart-discussion";
         /** source tab id whose discussion should restart */
         tabId: number;
-        /** response language for the restarted discussion */
-        requestedLanguage: string;
+        /** prompt template id for the restarted discussion */
+        requestedPromptTemplateId: string;
         /** source text to pass into the regenerated prompt */
         selectionText: string;
     };

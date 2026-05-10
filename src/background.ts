@@ -3,10 +3,82 @@
  * from any other Chrome context menu events.
  */
 const MENU_PARENT_ID = "discuss-in-chatgpt";
-const MENU_ORIGINAL_LANGUAGE_ID = "discuss-in-chatgpt-original-language";
-const MENU_PREFERRED_LANGUAGE_PREFIX = "discuss-in-chatgpt-preferred-language-";
+const MENU_TEMPLATE_PREFIX = "discuss-in-chatgpt-template-";
 const DEFAULT_PREFERRED_LANGUAGE = "English";
 const ORIGINAL_LANGUAGE_LABEL = "Original language";
+const DEFAULT_PROMPT_TEMPLATE_NAME = "Default";
+const DEFAULT_PROMPT_TEMPLATE_ID = "default";
+const DEFAULT_PROMPT_TEMPLATE = [
+    "Hi, I’d like to discuss the following content.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Selected excerpt:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Please:",
+    "- Provide a concise summary",
+    "- Identify the main idea",
+    "- Highlight what is actually important",
+    "- Point out weak or questionable parts",
+    "Use the language of the original material for your response."
+].join("\n");
+const DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID = "default-translated";
+const DEFAULT_TRANSLATED_PROMPT_TEMPLATE_NAME = "Default translated";
+const DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
+    "Hi, I’d like to discuss the following content.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Selected excerpt:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Please:",
+    "- Provide a concise summary",
+    "- Identify the main idea",
+    "- Highlight what is actually important",
+    "- Point out weak or questionable parts",
+    "Use {preferred_language} for your response."
+].join("\n");
+const SHORT_SUMMARY_PROMPT_TEMPLATE_ID = "short-summary";
+const SHORT_SUMMARY_PROMPT_TEMPLATE_NAME = "Short summary";
+const SHORT_SUMMARY_PROMPT_TEMPLATE = [
+    "Compact the following material into a short summary.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Material:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Do not analyze or critique it.",
+    "Use the language of the original material for your response."
+].join("\n");
+const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID = "short-summary-translated";
+const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_NAME = "Short summary translated";
+const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
+    "Compact the following material into a short summary.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "Material:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Do not analyze or critique it.",
+    "Use {preferred_language} for your response."
+].join("\n");
+const PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
+    DEFAULT_PROMPT_TEMPLATE_ID,
+    DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID,
+    SHORT_SUMMARY_PROMPT_TEMPLATE_ID
+]);
 
 /**
  * Registers the context menu after install and enables side panel support for
@@ -82,10 +154,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 /**
- * Keeps preferred-language context menu items aligned with settings.
+ * Keeps prompt-template context menu items aligned with settings.
  */
 chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === "local" && changes["preferredLanguage"]) {
+    if (areaName === "local" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
         createContextMenus();
     }
 });
@@ -135,7 +207,7 @@ async function ensurePanelConfiguredForAllTabs(): Promise<void> {
 }
 
 /**
- * Registers the parent context menu and its language-specific child actions.
+ * Registers the parent context menu and its prompt-template actions.
  */
 function createContextMenus(): void {
     chrome.contextMenus.removeAll(() => {
@@ -147,7 +219,7 @@ function createContextMenus(): void {
  * Builds context menu items after Chrome has removed the previous tree.
  */
 async function createContextMenusAfterClear(): Promise<void> {
-    const preferredLanguages = await getPreferredLanguages();
+    const promptTemplates = await getPromptTemplates();
 
     chrome.contextMenus.create({
         id: MENU_PARENT_ID,
@@ -155,18 +227,11 @@ async function createContextMenusAfterClear(): Promise<void> {
         contexts: ["page", "selection"]
     });
 
-    chrome.contextMenus.create({
-        id: MENU_ORIGINAL_LANGUAGE_ID,
-        parentId: MENU_PARENT_ID,
-        title: "In original language",
-        contexts: ["page", "selection"]
-    });
-
-    preferredLanguages.forEach((language, index) => {
+    promptTemplates.forEach((promptTemplate, promptTemplateIndex) => {
         chrome.contextMenus.create({
-            id: `${MENU_PREFERRED_LANGUAGE_PREFIX}${index}`,
+            id: `${MENU_TEMPLATE_PREFIX}${promptTemplateIndex}`,
             parentId: MENU_PARENT_ID,
-            title: `In ${language}`,
+            title: `Using "${promptTemplate.name}" template`,
             contexts: ["page", "selection"]
         });
     });
@@ -176,21 +241,21 @@ async function createContextMenusAfterClear(): Promise<void> {
  * Returns whether the clicked context menu item belongs to this extension.
  */
 function isDiscussionMenuItem(menuItemId: string): boolean {
-    return menuItemId === MENU_ORIGINAL_LANGUAGE_ID || menuItemId.startsWith(MENU_PREFERRED_LANGUAGE_PREFIX);
+    return menuItemId.startsWith(MENU_TEMPLATE_PREFIX);
 }
 
 /**
- * Resolves the preferred response language represented by a submenu id.
+ * Resolves the prompt template represented by a context menu id.
  */
-async function getMenuPreferredLanguage(menuItemId: string): Promise<string | undefined> {
-    if (menuItemId === MENU_ORIGINAL_LANGUAGE_ID) {
-        return undefined;
+async function getMenuPromptTemplate(menuItemId: string): Promise<PromptTemplate> {
+    const promptTemplates = await getPromptTemplates();
+
+    if (!menuItemId.startsWith(MENU_TEMPLATE_PREFIX)) {
+        return promptTemplates[0];
     }
 
-    const index = Number(menuItemId.slice(MENU_PREFERRED_LANGUAGE_PREFIX.length));
-    const preferredLanguages = await getPreferredLanguages();
-
-    return Number.isInteger(index) ? preferredLanguages[index] : undefined;
+    const promptTemplateIndex = Number(menuItemId.slice(MENU_TEMPLATE_PREFIX.length));
+    return Number.isInteger(promptTemplateIndex) ? promptTemplates[promptTemplateIndex] ?? promptTemplates[0] : promptTemplates[0];
 }
 
 /**
@@ -342,16 +407,23 @@ async function handleContextMenuClick(
 
     openDiscussionPanel(tab.id);
 
-    const preferredLanguage = await getMenuPreferredLanguage(menuItemId);
+    const promptTemplate = await getMenuPromptTemplate(menuItemId);
+    const preferredLanguage = await getPreferredLanguage();
     const existingDiscussion = await getDiscussionForTab(tab.id);
 
     if (existingDiscussion) {
-        await handleExistingDiscussionLanguage(tab.id, info.selectionText ?? "", existingDiscussion, preferredLanguage);
+        await handleExistingDiscussionLanguage(
+            tab.id,
+            info.selectionText ?? "",
+            existingDiscussion,
+            promptTemplate,
+            getRequestedResponseLanguage(promptTemplate, preferredLanguage)
+        );
         return;
     }
 
     await clearPendingLanguageMismatch(tab.id);
-    await createDiscussionFromTab(tab, info.selectionText ?? "", preferredLanguage);
+    await createDiscussionFromTab(tab, info.selectionText ?? "", promptTemplate);
 }
 
 /**
@@ -413,18 +485,19 @@ async function clearCacheStorage(): Promise<void> {
 }
 
 /**
- * Stores or clears the language decision needed for an existing session.
+ * Stores or clears the restart decision needed for an existing session.
  */
 async function handleExistingDiscussionLanguage(
     tabId: number,
     selectionText: string,
     discussion: DiscussionState,
-    preferredLanguage?: string
+    promptTemplate: PromptTemplate,
+    requestedLanguage: string
 ): Promise<void> {
-    const requestedLanguage = preferredLanguage ?? ORIGINAL_LANGUAGE_LABEL;
     const currentLanguage = discussion.responseLanguage ?? ORIGINAL_LANGUAGE_LABEL;
+    const currentPromptTemplateName = discussion.promptTemplateName ?? DEFAULT_PROMPT_TEMPLATE_NAME;
 
-    if (requestedLanguage === currentLanguage) {
+    if (requestedLanguage === currentLanguage && promptTemplate.name === currentPromptTemplateName) {
         await clearPendingLanguageMismatch(tabId);
         return;
     }
@@ -432,26 +505,34 @@ async function handleExistingDiscussionLanguage(
     await setPendingLanguageMismatch({
         tabId,
         currentLanguage,
+        currentPromptTemplateName,
         requestedLanguage,
+        requestedPromptTemplateId: promptTemplate.id,
+        requestedPromptTemplateName: promptTemplate.name,
         selectionText,
         stamp: Date.now()
     });
 }
 
 /**
- * Restarts a tab discussion from the side panel language mismatch prompt.
+ * Restarts a tab discussion from the side panel settings mismatch prompt.
  */
 async function restartDiscussion(message: Partial<RuntimeMessage>): Promise<void> {
     if (message.type !== "restart-discussion" || typeof message.tabId !== "number") {
         throw new Error("Restart request is missing tab id");
     }
 
-    if (typeof message.requestedLanguage !== "string") {
-        throw new Error("Restart request is missing language");
+    if (typeof message.requestedPromptTemplateId !== "string") {
+        throw new Error("Restart request is missing prompt template");
     }
 
     const tab = await chrome.tabs.get(message.tabId);
-    const restarted = await createDiscussionFromTab(tab, message.selectionText ?? "", message.requestedLanguage);
+    const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
+    const restarted = await createDiscussionFromTab(
+        tab,
+        message.selectionText ?? "",
+        promptTemplate
+    );
     if (!restarted) {
         throw new Error("Restart operation failed");
     }
@@ -460,7 +541,7 @@ async function restartDiscussion(message: Partial<RuntimeMessage>): Promise<void
 }
 
 /**
- * Stores a tab-scoped language mismatch prompt for the side panel.
+ * Stores a tab-scoped settings mismatch prompt for the side panel.
  */
 async function setPendingLanguageMismatch(mismatch: PendingLanguageMismatch): Promise<void> {
     const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
@@ -474,7 +555,7 @@ async function setPendingLanguageMismatch(mismatch: PendingLanguageMismatch): Pr
 }
 
 /**
- * Clears a tab-scoped language mismatch prompt.
+ * Clears a tab-scoped settings mismatch prompt.
  */
 async function clearPendingLanguageMismatch(tabId: number): Promise<void> {
     const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
@@ -497,7 +578,7 @@ async function clearPendingLanguageMismatch(tabId: number): Promise<void> {
 async function createDiscussionFromTab(
     tab: chrome.tabs.Tab,
     selectionText: string,
-    preferredLanguage?: string
+    promptTemplate: PromptTemplate
 ): Promise<boolean> {
     if (!tab.id) {
         return false;
@@ -516,7 +597,8 @@ async function createDiscussionFromTab(
             return false;
         }
 
-        const prompt = buildPrompt(result, preferredLanguage);
+        const preferredLanguage = await getPreferredLanguage();
+        const prompt = buildPrompt(result, promptTemplate, preferredLanguage);
         const sessionId = crypto.randomUUID();
         const storage = (await chrome.storage.local.get([
             "discussions",
@@ -536,7 +618,8 @@ async function createDiscussionFromTab(
             stamp: Date.now(),
             source: result,
             consumed: false,
-            responseLanguage: preferredLanguage ?? ORIGINAL_LANGUAGE_LABEL
+            responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
+            promptTemplateName: promptTemplate.name
         };
         tabSessionIds[String(tab.id)] = sessionId;
 
@@ -586,75 +669,210 @@ function collectPageData(selectionText: string): DiscussSource {
 }
 
 /**
- * Builds the prompt inserted into ChatGPT from the selected page metadata.
+ * Builds the prompt inserted into ChatGPT from a user-editable template.
  */
-function buildPrompt(data: DiscussSource, preferredLanguage?: string): string {
-    const hasSelection = data.selection && data.selection.trim().length > 0;
+function buildPrompt(
+    data: DiscussSource,
+    promptTemplate: PromptTemplate,
+    preferredLanguage: string
+): string {
+    const macros = getPromptMacros(data, preferredLanguage);
 
-    const parts: string[] = [
-        paragraph("Hi, I’d like to discuss the following content."),
-        paragraph(`Title: ${data.title || "(no title)"}`),
-        paragraph(`URL: ${data.url || "(no url)"}`)
-    ];
-
-    if (hasSelection) {
-        // keep the stored prompt bounded so large selections remain cheap to
-        // move through extension storage and into the ChatGPT composer
-        const MAX = 4000;
-        const selection = data.selection.trim().slice(0, MAX);
-
-        parts.push(
-            paragraph("Selected excerpt:"),
-            paragraph(selection),
-            paragraph("Focus primarily on this excerpt.")
-        );
-    }
-
-    parts.push(
-        paragraph("Please:"),
-        paragraph("- Provide a concise summary"),
-        paragraph("- Identify the main idea"),
-        paragraph("- Highlight what is actually important"),
-        paragraph("- Point out weak or questionable parts"),
-        paragraph(getResponseLanguageInstruction(preferredLanguage))
-    );
-
-    return parts.join("\n");
+    return applyPromptConditionals(promptTemplate.template, macros)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => paragraph(applyPromptMacros(line, macros)))
+        .join("\n");
 }
 
 /**
- * Returns the currently configured preferred response languages.
+ * Removes conditional template blocks when their macro value is absent.
  */
-async function getPreferredLanguages(): Promise<string[]> {
+function applyPromptConditionals(template: string, macros: Record<string, string>): string {
+    return template.replace(/\{if\s+([a-z0-9_]+)}\n?([\s\S]*?)\n?\{\/if}/g, (_match, name: string, content: string) => {
+        return macros[name]?.trim() ? content : "";
+    });
+}
+
+/**
+ * Builds supported prompt template macro values from source and settings.
+ */
+function getPromptMacros(
+    data: DiscussSource,
+    preferredLanguage: string
+): Record<string, string> {
+    const now = new Date();
+    return {
+        page_title: data.title || "(no title)",
+        page_url: data.url || "(no url)",
+        selected_text: data.selection.trim().slice(0, 4000),
+        current_date: now.toLocaleDateString(),
+        current_time: now.toLocaleTimeString(),
+        preferred_language: preferredLanguage
+    };
+}
+
+/**
+ * Replaces supported prompt template macros with prepared values.
+ */
+function applyPromptMacros(
+    text: string,
+    macros: Record<string, string>
+): string {
+    return text
+        .replace(/\{([a-z0-9_]+)}/g, (match, name: string) => {
+            return macros[name] ?? match;
+        });
+}
+
+/**
+ * Returns the currently configured preferred response language.
+ */
+async function getPreferredLanguage(): Promise<string> {
     const storage = (await chrome.storage.local.get("preferredLanguage")) as StorageShape;
-    return normalizePreferredLanguages(storage.preferredLanguage);
+    return normalizePreferredLanguage(storage.preferredLanguage);
 }
 
 /**
- * Converts stored or user-entered language values into usable menu labels.
+ * Returns stored prompt templates or the hardcoded default fallback.
  */
-function normalizePreferredLanguages(value: unknown): string[] {
+async function getPromptTemplates(): Promise<PromptTemplate[]> {
+    const storage = (await chrome.storage.local.get("promptTemplates")) as StorageShape;
+    return normalizePromptTemplates(storage.promptTemplates);
+}
+
+/**
+ * Returns one prompt template by id or the current default template.
+ */
+async function getPromptTemplateById(promptTemplateId: string): Promise<PromptTemplate> {
+    const promptTemplates = await getPromptTemplates();
+    return promptTemplates.find((promptTemplate) => promptTemplate.id === promptTemplateId) ?? promptTemplates[0];
+}
+
+/**
+ * Converts stored or user-entered language values into one usable language.
+ */
+function normalizePreferredLanguage(value: unknown): string {
     if (typeof value !== "string") {
-        return [DEFAULT_PREFERRED_LANGUAGE];
+        return DEFAULT_PREFERRED_LANGUAGE;
     }
 
-    const languages = value
-        .split(",")
-        .map((language) => language.trim())
-        .filter((language) => language.length > 0);
-
-    return languages.length > 0 ? languages : [DEFAULT_PREFERRED_LANGUAGE];
+    return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
 }
 
 /**
- * Builds the prompt instruction for original-language or preferred-language replies.
+ * Converts stored prompt template values into usable context menu entries.
  */
-function getResponseLanguageInstruction(preferredLanguage?: string): string {
-    if (preferredLanguage) {
-        return `Use ${preferredLanguage} for your response.`;
+function normalizePromptTemplates(value: unknown): PromptTemplate[] {
+    if (!Array.isArray(value)) {
+        return getDefaultPromptTemplates();
     }
 
-    return "Use the language of the original material for your response.";
+    const promptTemplates = value
+        .filter((template): template is PromptTemplate => {
+            return typeof template?.id === "string" &&
+                typeof template?.name === "string" &&
+                typeof template?.template === "string";
+        })
+        .map((template) => ({
+            id: template.id.trim() || crypto.randomUUID(),
+            name: template.name.trim() || DEFAULT_PROMPT_TEMPLATE_NAME,
+            template: sanitizePromptTemplate(template.template) || DEFAULT_PROMPT_TEMPLATE
+        }));
+
+    return promptTemplates.length > 0 ? appendMissingTranslatedSummaryTemplate(promptTemplates) : getDefaultPromptTemplates();
+}
+
+/**
+ * Returns hardcoded prompt templates used before settings exist.
+ */
+function getDefaultPromptTemplates(): PromptTemplate[] {
+    return [
+        {
+            id: DEFAULT_PROMPT_TEMPLATE_ID,
+            name: DEFAULT_PROMPT_TEMPLATE_NAME,
+            template: DEFAULT_PROMPT_TEMPLATE
+        },
+        {
+            id: DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID,
+            name: DEFAULT_TRANSLATED_PROMPT_TEMPLATE_NAME,
+            template: DEFAULT_TRANSLATED_PROMPT_TEMPLATE
+        },
+        {
+            id: SHORT_SUMMARY_PROMPT_TEMPLATE_ID,
+            name: SHORT_SUMMARY_PROMPT_TEMPLATE_NAME,
+            template: SHORT_SUMMARY_PROMPT_TEMPLATE
+        },
+        {
+            id: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID,
+            name: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_NAME,
+            template: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
+        }
+    ];
+}
+
+/**
+ * Adds the new translated summary template to older built-in template lists.
+ */
+function appendMissingTranslatedSummaryTemplate(promptTemplates: PromptTemplate[]): PromptTemplate[] {
+    const hasOlderBuiltInTemplate = promptTemplates.some((promptTemplate) => {
+        return PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY.has(promptTemplate.id);
+    });
+    const hasTranslatedSummaryTemplate = promptTemplates.some((promptTemplate) => {
+        return promptTemplate.id === SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID;
+    });
+
+    if (!hasOlderBuiltInTemplate || hasTranslatedSummaryTemplate) {
+        return promptTemplates;
+    }
+
+    return [
+        ...promptTemplates,
+        {
+            id: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID,
+            name: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_NAME,
+            template: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
+        }
+    ];
+}
+
+/**
+ * Removes legacy unsupported macros from stored prompt template text.
+ */
+function sanitizePromptTemplate(template: string): string {
+    return addSelectionConditionalsToLegacyTemplate(template)
+        .replace(/\{response_language_instruction}/g, "")
+        .replace(/\{response_language}/g, "")
+        .trim();
+}
+
+/**
+ * Wraps older built-in selection blocks so page-only prompts stay clean.
+ */
+function addSelectionConditionalsToLegacyTemplate(template: string): string {
+    if (template.includes("{if selected_text}")) {
+        return template;
+    }
+
+    return template
+        .replace(
+            "Selected excerpt:\n{selected_text}",
+            "{if selected_text}\nSelected excerpt:\n{selected_text}\n{/if}"
+        )
+        .replace(
+            "Material:\n{selected_text}",
+            "{if selected_text}\nMaterial:\n{selected_text}\n{/if}"
+        );
+}
+
+/**
+ * Returns the response language implied by the selected prompt template.
+ */
+function getRequestedResponseLanguage(promptTemplate: PromptTemplate, preferredLanguage: string): string {
+    return promptTemplate.template.includes("{preferred_language}")
+        ? preferredLanguage
+        : ORIGINAL_LANGUAGE_LABEL;
 }
 
 /**
