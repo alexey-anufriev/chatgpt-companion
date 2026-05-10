@@ -81,6 +81,8 @@ type StorageShape = {
     preferredLanguage?: string;
     /** stored prompt templates that override the hardcoded default */
     promptTemplates?: PromptTemplate[];
+    /** whether extension settings should mirror to chrome.storage.sync */
+    cloudSyncEnabled?: boolean;
     /** source tab id to pending settings mismatch prompt */
     pendingLanguageMismatches?: Record<string, PendingLanguageMismatch>;
 };

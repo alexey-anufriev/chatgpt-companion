@@ -79,13 +79,18 @@ const PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
     DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID,
     SHORT_SUMMARY_PROMPT_TEMPLATE_ID
 ]);
+const SYNC_SETTING_KEYS: (keyof StorageShape)[] = [
+    "cloudSyncEnabled",
+    "preferredLanguage",
+    "promptTemplates"
+];
 
 /**
  * Registers the context menu after install and enables side panel support for
  * tabs that already exist.
  */
 chrome.runtime.onInstalled.addListener(() => {
-    createContextMenus();
+    void initializeSettingsAndMenus();
 
     void ensurePanelConfiguredForAllTabs();
 });
@@ -95,7 +100,7 @@ chrome.runtime.onInstalled.addListener(() => {
  */
 chrome.runtime.onStartup.addListener(() => {
     void restoreMappingsAndConfigurePanels();
-    createContextMenus();
+    void initializeSettingsAndMenus();
 });
 
 /**
@@ -160,6 +165,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "local" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
         createContextMenus();
     }
+
+    if (areaName === "sync" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
+        void pullCloudSettingsToLocal()
+            .then((didPull) => {
+                if (didPull) {
+                    createContextMenus();
+                }
+            })
+            .catch((error) => {
+                console.error("[discuss-with-chatgpt-ext] cloud settings pull failed", error);
+            });
+    }
 });
 
 /**
@@ -204,6 +221,50 @@ async function ensurePanelConfiguredForAllTabs(): Promise<void> {
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] ensurePanelConfiguredForAllTabs failed", error);
     }
+}
+
+/**
+ * Pulls synced settings before building settings-driven context menus.
+ */
+async function initializeSettingsAndMenus(): Promise<void> {
+    try {
+        await pullCloudSettingsToLocal();
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] cloud settings startup pull failed", error);
+    } finally {
+        createContextMenus();
+    }
+}
+
+/**
+ * Copies cloud settings into local storage when cloud sync is enabled.
+ */
+async function pullCloudSettingsToLocal(): Promise<boolean> {
+    const localSettings = (await chrome.storage.local.get("cloudSyncEnabled")) as StorageShape;
+
+    if (!localSettings.cloudSyncEnabled) {
+        return false;
+    }
+
+    const cloudSettings = (await chrome.storage.sync.get(SYNC_SETTING_KEYS)) as StorageShape;
+
+    if (!cloudSettings.cloudSyncEnabled && !hasCloudSettings(cloudSettings)) {
+        return false;
+    }
+
+    await chrome.storage.local.set({
+        preferredLanguage: normalizePreferredLanguage(cloudSettings.preferredLanguage),
+        promptTemplates: normalizePromptTemplates(cloudSettings.promptTemplates)
+    });
+
+    return true;
+}
+
+/**
+ * Returns whether cloud storage contains extension settings to pull.
+ */
+function hasCloudSettings(cloudSettings: StorageShape): boolean {
+    return typeof cloudSettings.preferredLanguage === "string" || Array.isArray(cloudSettings.promptTemplates);
 }
 
 /**
@@ -440,7 +501,7 @@ async function getDiscussionForTab(tabId: number): Promise<DiscussionState | nul
 }
 
 /**
- * Closes open side panels and removes extension-owned persisted state.
+ * Closes open side panels and removes persisted discussion state.
  */
 async function clearDataAndCache(): Promise<void> {
     await chrome.storage.local.set({
@@ -457,7 +518,13 @@ async function clearDataAndCache(): Promise<void> {
             })
     );
 
-    await chrome.storage.local.clear();
+    await chrome.storage.local.remove([
+        "discussions",
+        "tabSessionIds",
+        "pendingLanguageMismatches",
+        "closeDiscussionSessionId",
+        "clearAllDiscussionDraftsStamp"
+    ]);
     await clearSessionStorage();
     await clearCacheStorage();
     createContextMenus();

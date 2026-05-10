@@ -26,7 +26,9 @@
     "storage",
     "tabs",
     "activeTab",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "identity",
+    "identity.email"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

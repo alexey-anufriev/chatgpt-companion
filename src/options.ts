@@ -77,8 +77,14 @@ const OPTIONS_PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
     "default-translated",
     "short-summary"
 ]);
+const OPTIONS_SYNC_SETTING_KEYS: (keyof StorageShape)[] = [
+    "cloudSyncEnabled",
+    "preferredLanguage",
+    "promptTemplates"
+];
 
 const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
+const cloudSyncBtn = document.getElementById("cloudSyncBtn") as HTMLButtonElement | null;
 const saveSettingsBtn = document.getElementById("saveSettingsBtn") as HTMLButtonElement | null;
 const addPromptTemplateBtn = document.getElementById("addPromptTemplateBtn") as HTMLButtonElement | null;
 const promptTemplatesListEl = document.getElementById("promptTemplatesList") as HTMLDivElement | null;
@@ -89,10 +95,14 @@ const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElemen
 
 let savedPreferredLanguage = OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
 let savedPromptTemplates: PromptTemplate[] = [getOptionsDefaultPromptTemplate()];
+let savedCloudSyncEnabled = false;
+let isLoadingSettings = false;
+let isChangingCloudSync = false;
 let isSavingSettings = false;
 
 if (
     !preferredLanguageInput ||
+    !cloudSyncBtn ||
     !saveSettingsBtn ||
     !addPromptTemplateBtn ||
     !promptTemplatesListEl ||
@@ -109,6 +119,10 @@ if (
 
     saveSettingsBtn.addEventListener("click", () => {
         void saveSettings();
+    });
+
+    cloudSyncBtn.addEventListener("click", () => {
+        void handleCloudSyncButtonClick();
     });
 
     addPromptTemplateBtn.addEventListener("click", () => {
@@ -129,7 +143,11 @@ if (
             void renderPersistedSessions();
         }
 
-        if (areaName === "local" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
+        if (
+            !isLoadingSettings &&
+            areaName === "local" &&
+            (changes["preferredLanguage"] || changes["promptTemplates"] || changes["cloudSyncEnabled"])
+        ) {
             void loadSettings();
         }
     });
@@ -139,13 +157,30 @@ if (
 }
 
 async function loadSettings(): Promise<void> {
-    const storage = (await chrome.storage.local.get([
-        "preferredLanguage",
-        "promptTemplates"
-    ])) as StorageShape;
+    if (isLoadingSettings) {
+        return;
+    }
 
-    renderPreferredLanguage(storage.preferredLanguage);
-    renderPromptTemplates(storage.promptTemplates);
+    isLoadingSettings = true;
+
+    try {
+        const syncState = (await chrome.storage.local.get("cloudSyncEnabled")) as StorageShape;
+
+        if (syncState.cloudSyncEnabled) {
+            await pullOptionsCloudSettingsToLocal().catch((error) => {
+                console.error("[discuss-with-chatgpt-ext] cloud settings pull failed", error);
+            });
+        }
+
+        const storage = (await chrome.storage.local.get(OPTIONS_SYNC_SETTING_KEYS)) as StorageShape;
+
+        savedCloudSyncEnabled = storage.cloudSyncEnabled === true;
+        renderCloudSyncButton();
+        renderPreferredLanguage(storage.preferredLanguage);
+        renderPromptTemplates(storage.promptTemplates);
+    } finally {
+        isLoadingSettings = false;
+    }
 }
 
 function renderPreferredLanguage(preferredLanguage: unknown): void {
@@ -190,11 +225,23 @@ async function saveSettings(): Promise<void> {
             preferredLanguage: nextPreferredLanguage,
             promptTemplates: nextPromptTemplates
         });
+
         savedPreferredLanguage = nextPreferredLanguage;
         savedPromptTemplates = nextPromptTemplates;
         preferredLanguageInput.value = nextPreferredLanguage;
         renderPromptTemplates(nextPromptTemplates);
-        statusEl.textContent = "Settings saved.";
+
+        if (savedCloudSyncEnabled) {
+            try {
+                await pushOptionsCloudSettings(nextPreferredLanguage, nextPromptTemplates);
+                statusEl.textContent = "Settings saved and queued for cloud sync.";
+            } catch (error) {
+                console.error("[discuss-with-chatgpt-ext] cloud settings save failed", error);
+                statusEl.textContent = "Settings saved locally. Cloud sync failed.";
+            }
+        } else {
+            statusEl.textContent = "Settings saved.";
+        }
     } catch (error) {
         console.error("[discuss-with-chatgpt-ext] save settings failed", error);
         statusEl.textContent = error instanceof Error ? error.message : "Save operation failed.";
@@ -202,6 +249,120 @@ async function saveSettings(): Promise<void> {
         isSavingSettings = false;
         updateSaveButtonState();
     }
+}
+
+async function handleCloudSyncButtonClick(): Promise<void> {
+    if (savedCloudSyncEnabled) {
+        await disableCloudSync();
+        return;
+    }
+
+    await enableCloudSync();
+}
+
+async function enableCloudSync(): Promise<void> {
+    if (!cloudSyncBtn || !statusEl) {
+        return;
+    }
+
+    isChangingCloudSync = true;
+    renderCloudSyncButton();
+    statusEl.textContent = "Enabling cloud sync...";
+
+    try {
+        const profileUserInfo = await chrome.identity.getProfileUserInfo();
+        const cloudSettings = await readOptionsCloudSettings();
+        const isProfileSignedIn = profileUserInfo.email.trim().length > 0;
+
+        await chrome.storage.local.set({
+            cloudSyncEnabled: true
+        });
+
+        const warning = isProfileSignedIn ? "" : " Chrome profile is not signed in, so settings may stay local.";
+
+        if (hasOptionsCloudSettings(cloudSettings)) {
+            await applyOptionsCloudSettingsToLocal(cloudSettings);
+            statusEl.textContent = `Cloud sync enabled. Remote settings loaded.${warning}`;
+        } else {
+            statusEl.textContent = `Cloud sync enabled. Save settings to upload them.${warning}`;
+        }
+
+        savedCloudSyncEnabled = true;
+        renderCloudSyncButton();
+        await loadSettings();
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] enable cloud sync failed", error);
+        statusEl.textContent = error instanceof Error ? error.message : "Cloud sync enable failed.";
+    } finally {
+        isChangingCloudSync = false;
+        renderCloudSyncButton();
+    }
+}
+
+async function disableCloudSync(): Promise<void> {
+    if (!cloudSyncBtn || !statusEl) {
+        return;
+    }
+
+    isChangingCloudSync = true;
+    renderCloudSyncButton();
+    statusEl.textContent = "Disabling cloud sync...";
+
+    try {
+        await chrome.storage.local.set({
+            cloudSyncEnabled: false
+        });
+        savedCloudSyncEnabled = false;
+        statusEl.textContent = "Cloud sync disabled. Local settings kept.";
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] disable cloud sync failed", error);
+        statusEl.textContent = error instanceof Error ? error.message : "Cloud sync disable failed.";
+    } finally {
+        isChangingCloudSync = false;
+        renderCloudSyncButton();
+    }
+}
+
+function renderCloudSyncButton(): void {
+    if (!cloudSyncBtn) {
+        return;
+    }
+
+    cloudSyncBtn.disabled = isChangingCloudSync;
+    cloudSyncBtn.textContent = savedCloudSyncEnabled ? "Disable Cloud Sync" : "Enable Cloud Sync";
+}
+
+async function pullOptionsCloudSettingsToLocal(): Promise<void> {
+    const cloudSettings = await readOptionsCloudSettings();
+
+    if (!cloudSettings.cloudSyncEnabled && !hasOptionsCloudSettings(cloudSettings)) {
+        return;
+    }
+
+    await applyOptionsCloudSettingsToLocal(cloudSettings);
+}
+
+async function applyOptionsCloudSettingsToLocal(cloudSettings: StorageShape): Promise<void> {
+    await chrome.storage.local.set({
+        preferredLanguage: normalizeOptionsPreferredLanguage(cloudSettings.preferredLanguage),
+        promptTemplates: normalizeOptionsPromptTemplates(cloudSettings.promptTemplates)
+    });
+}
+
+function hasOptionsCloudSettings(cloudSettings: StorageShape): boolean {
+    return typeof cloudSettings.preferredLanguage === "string" || Array.isArray(cloudSettings.promptTemplates);
+}
+
+async function pushOptionsCloudSettings(preferredLanguage: string, promptTemplates: PromptTemplate[]): Promise<void> {
+    await chrome.storage.sync.set({
+        cloudSyncEnabled: true,
+        preferredLanguage,
+        promptTemplates
+    });
+}
+
+async function readOptionsCloudSettings(): Promise<StorageShape> {
+    return (await chrome.storage.sync.get(OPTIONS_SYNC_SETTING_KEYS)) as StorageShape;
 }
 
 function addPromptTemplateEditor(promptTemplate: PromptTemplate): void {
