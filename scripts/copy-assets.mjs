@@ -9,6 +9,8 @@ mkdirSync(distDir, { recursive: true });
 
 const filesToCopy = [
     "src/manifest.json",
+    "src/options.html",
+    "src/options.css",
     "src/sidepanel.html",
     "src/sidepanel.css",
     "src/rules.json",

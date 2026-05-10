@@ -6,6 +6,7 @@ const copyPromptBtn = document.getElementById("copyPromptBtn") as HTMLButtonElem
 const reinsertBtn = document.getElementById("reinsertBtn") as HTMLButtonElement | null;
 const closeBtn = document.getElementById("closeBtn") as HTMLButtonElement | null;
 const chatgptFrame = document.getElementById("chatgptFrame") as HTMLIFrameElement | null;
+const panelTabId = getPanelTabId();
 
 /**
  * Extension session id currently loaded into the ChatGPT iframe.
@@ -16,14 +17,14 @@ const chatgptFrame = document.getElementById("chatgptFrame") as HTMLIFrameElemen
  * match the iframe page to the prompt it should insert.
  *
  * The side panel starts with no iframe session loaded, so this value is null.
- * During startup, storage changes, and active-tab changes, the side panel reads
- * the active tab's extension session id from storage. When that id differs from
+ * During startup and storage changes, the side panel reads this panel tab's
+ * extension session id from storage. When that id differs from
  * this local value, the side panel updates this value to the new id and
  * navigates the iframe to a ChatGPT URL containing that session hash.
  *
- * Keeping this local copy prevents repeated storage or tab-activation events
- * from reloading the iframe for the same session, which would discard the
- * current ChatGPT composer state.
+ * Keeping this local copy prevents repeated storage events from reloading the
+ * iframe for the same session, which would discard the current ChatGPT composer
+ * state.
  */
 let currentIframeSessionId: string | null = null;
 
@@ -35,12 +36,22 @@ async function init(): Promise<void> {
         return;
     }
 
+    if (panelTabId === null) {
+        console.error("[discuss-with-chatgpt-ext] side panel tab id not found");
+        return;
+    }
+
+    attachEvents();
+    attachStorageListener();
+
     await renderSource();
     await syncIframeSession();
-    attachEvents();
+}
 
-    // storage changes are the side panel's primary signal that the active tab
-    // received a new prompt or session mapping
+/**
+ * Watches extension storage for this panel tab's discussion data.
+ */
+function attachStorageListener(): void {
     chrome.storage.onChanged.addListener(async (changes, areaName) => {
         if (areaName !== "local") {
             return;
@@ -51,13 +62,6 @@ async function init(): Promise<void> {
             await syncIframeSession();
         }
     });
-
-    // the active tab can change without storage changing, so refresh visible
-    // metadata and iframe state on activation too
-    chrome.tabs.onActivated.addListener(() => {
-        void renderSource();
-        void syncIframeSession();
-    });
 }
 
 /**
@@ -66,13 +70,12 @@ async function init(): Promise<void> {
  */
 function attachEvents(): void {
     copyPromptBtn?.addEventListener("click", async () => {
-        const discussion = await getActiveDiscussion();
+        const discussion = await getPanelDiscussion();
         await navigator.clipboard.writeText(discussion?.prompt ?? "");
     });
 
     reinsertBtn?.addEventListener("click", async () => {
-        const activeTabId = await getActiveTabId();
-        if (activeTabId === null) {
+        if (panelTabId === null) {
             return;
         }
 
@@ -80,7 +83,7 @@ function attachEvents(): void {
             "discussions",
             "tabSessionIds"
         ])) as StorageShape;
-        const sessionId = storage.tabSessionIds?.[String(activeTabId)];
+        const sessionId = storage.tabSessionIds?.[String(panelTabId)];
         if (!sessionId || !storage.discussions?.[sessionId]) {
             return;
         }
@@ -99,8 +102,7 @@ function attachEvents(): void {
     });
 
     closeBtn?.addEventListener("click", async () => {
-        const activeTabId = await getActiveTabId();
-        if (activeTabId === null) {
+        if (panelTabId === null) {
             return;
         }
 
@@ -108,7 +110,7 @@ function attachEvents(): void {
             "discussions",
             "tabSessionIds"
         ])) as StorageShape;
-        const tabKey = String(activeTabId);
+        const tabKey = String(panelTabId);
         const sessionId = storage.tabSessionIds?.[tabKey];
         const discussions = { ...(storage.discussions ?? {}) };
         const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
@@ -133,14 +135,14 @@ function attachEvents(): void {
 }
 
 /**
- * Renders the source title and URL for the active tab's current discussion.
+ * Renders the source title and URL for this panel tab's current discussion.
  */
 async function renderSource(): Promise<void> {
     if (!sourceTitleEl || !sourceUrlEl) {
         return;
     }
 
-    const discussion = await getActiveDiscussion();
+    const discussion = await getPanelDiscussion();
     const source = discussion?.source;
 
     if (!source) {
@@ -154,14 +156,15 @@ async function renderSource(): Promise<void> {
 }
 
 /**
- * Keeps the embedded ChatGPT frame aligned with the active browser tab's
+ * Keeps the embedded ChatGPT frame aligned with this panel tab's
  * discussion session.
  *
  * The background script creates one extension session id per source tab and
- * stores that mapping in chrome.storage.local.tabSessionIds. The side panel can
- * be notified for the same tab/session more than once during startup, storage
- * updates, and tab activation, so this function treats storage as the source of
- * truth and only navigates the iframe when the desired session actually changes.
+ * stores that mapping in chrome.storage.local.tabSessionIds. The side panel is
+ * bound to one source tab through its tabId URL parameter and can be notified
+ * for the same tab/session more than once during startup and storage updates, so
+ * this function treats storage as the source of truth and only navigates the
+ * iframe when the desired session actually changes.
  *
  * Navigating the iframe is meaningful because buildChatUrl embeds the session
  * id in the ChatGPT URL hash. The content script running inside ChatGPT reads
@@ -177,22 +180,33 @@ async function syncIframeSession(): Promise<void> {
         return;
     }
 
-    const activeTabId = await getActiveTabId();
-    if (activeTabId === null) {
+    if (panelTabId === null) {
         return;
     }
 
-    const data = (await chrome.storage.local.get("tabSessionIds")) as StorageShape;
-    const sessionId = data.tabSessionIds?.[String(activeTabId)];
+    const data = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const sessionId = data.tabSessionIds?.[String(panelTabId)];
+
+    if (!sessionId) {
+        if (currentIframeSessionId !== null) {
+            currentIframeSessionId = null;
+            chatgptFrame.src = CHATGPT_BASE_URL;
+        }
+
+        return;
+    }
 
     // loading the same session again would reload ChatGPT and discard the
     // current composer state
-    if (!sessionId || sessionId === currentIframeSessionId) {
+    if (sessionId === currentIframeSessionId) {
         return;
     }
 
     currentIframeSessionId = sessionId;
-    chatgptFrame.src = buildChatUrl(sessionId);
+    chatgptFrame.src = buildChatUrl(sessionId, data.discussions?.[sessionId]?.chatUrl);
 }
 
 /**
@@ -202,18 +216,17 @@ async function syncIframeSession(): Promise<void> {
  * id. It lets the ChatGPT content script identify which discussion entry in
  * chrome.storage.local belongs to this iframe load.
  */
-function buildChatUrl(sessionId: string): string {
-    const url = new URL(CHATGPT_BASE_URL);
+function buildChatUrl(sessionId: string, chatUrl?: string): string {
+    const url = new URL(chatUrl || CHATGPT_BASE_URL);
     url.hash = `dwc_session=${encodeURIComponent(sessionId)}`;
     return url.toString();
 }
 
 /**
- * Returns the discussion state associated with the currently active browser tab.
+ * Returns the discussion state associated with this panel tab.
  */
-async function getActiveDiscussion(): Promise<DiscussionState | null> {
-    const activeTabId = await getActiveTabId();
-    if (activeTabId === null) {
+async function getPanelDiscussion(): Promise<DiscussionState | null> {
+    if (panelTabId === null) {
         return null;
     }
 
@@ -221,19 +234,20 @@ async function getActiveDiscussion(): Promise<DiscussionState | null> {
         "discussions",
         "tabSessionIds"
     ])) as StorageShape;
-    const sessionId = data.tabSessionIds?.[String(activeTabId)];
+    const sessionId = data.tabSessionIds?.[String(panelTabId)];
 
     return sessionId ? data.discussions?.[sessionId] ?? null : null;
 }
 
 /**
- * Looks up the active tab id in the current browser window.
+ * Reads the source tab id bound into this side panel document URL.
  */
-async function getActiveTabId(): Promise<number | null> {
-    const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true
-    });
+function getPanelTabId(): number | null {
+    const tabId = new URLSearchParams(location.search).get("tabId");
+    if (!tabId) {
+        return null;
+    }
 
-    return typeof tab?.id === "number" ? tab.id : null;
+    const parsed = Number(tabId);
+    return Number.isInteger(parsed) ? parsed : null;
 }

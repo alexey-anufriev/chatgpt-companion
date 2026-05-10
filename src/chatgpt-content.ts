@@ -5,10 +5,32 @@
 let lastAppliedStamp: number | null = null;
 
 /**
+ * Extension session id owned by this ChatGPT document.
+ */
+let currentExtensionSessionId: string | null = null;
+
+/**
  * Prevents duplicate storage listeners if the script is evaluated more than
  * once in the same ChatGPT document.
  */
 let isStorageListenerAttached = false;
+
+/**
+ * Prevents duplicate hashchange listeners if the script is evaluated more than
+ * once in the same ChatGPT document.
+ */
+let isHashListenerAttached = false;
+
+/**
+ * Prevents duplicate location listeners if the script is evaluated more than
+ * once in the same ChatGPT document.
+ */
+let isLocationListenerAttached = false;
+
+/**
+ * Last URL observed by the content script's location poller.
+ */
+let lastObservedUrl = location.href;
 
 /**
  * Starts the ChatGPT content-script integration once the script is evaluated.
@@ -27,9 +49,11 @@ async function bootstrap(): Promise<void> {
     // the listener must be attached before the initial storage read so a prompt
     // update cannot be missed while ChatGPT is still loading
     attachStorageListenerOnce();
+    attachHashListenerOnce();
+    attachLocationChangeListenerOnce();
 
-    await clearChatGPTNullThreadDraft();
-    await tryApplyLatestPrompt();
+    await syncComposerWithLocation();
+    await rememberCurrentChatUrl();
 }
 
 /**
@@ -55,9 +79,133 @@ function attachStorageListenerOnce(): void {
         if (changes["closeDiscussionSessionId"]) {
             await clearChatGPTNullThreadDraft();
         }
+
+        if (changes["clearAllDiscussionDraftsStamp"] && isEmbeddedFrame()) {
+            await clearComposer();
+        }
     });
 
     isStorageListenerAttached = true;
+}
+
+/**
+ * Attaches a single listener for iframe hash changes initiated by the side panel.
+ */
+function attachHashListenerOnce(): void {
+    if (isHashListenerAttached) {
+        return;
+    }
+
+    window.addEventListener("hashchange", () => {
+        void syncComposerWithLocation();
+        void rememberCurrentChatUrl();
+    });
+
+    isHashListenerAttached = true;
+}
+
+/**
+ * Attaches a single listener for ChatGPT's single-page-app URL changes.
+ */
+function attachLocationChangeListenerOnce(): void {
+    if (isLocationListenerAttached) {
+        return;
+    }
+
+    window.setInterval(() => {
+        if (location.href === lastObservedUrl) {
+            return;
+        }
+
+        lastObservedUrl = location.href;
+        void rememberCurrentChatUrl();
+    }, 500);
+
+    isLocationListenerAttached = true;
+}
+
+/**
+ * Applies the extension-owned ChatGPT iframe state from the current URL hash.
+ */
+async function syncComposerWithLocation(): Promise<void> {
+    if (!getCurrentSessionId()) {
+        if (isEmbeddedFrame() && !isConversationUrl()) {
+            await clearComposer();
+        }
+
+        return;
+    }
+
+    await clearChatGPTNullThreadDraft();
+    await tryApplyLatestPrompt();
+}
+
+/**
+ * Returns true when the content script is running inside the side panel iframe.
+ */
+function isEmbeddedFrame(): boolean {
+    return window.top !== window;
+}
+
+/**
+ * Stores the real ChatGPT conversation URL created after the prompt is submitted.
+ */
+async function rememberCurrentChatUrl(): Promise<void> {
+    const currentSessionId = getCurrentSessionId();
+    if (!currentSessionId || !isConversationUrl()) {
+        return;
+    }
+
+    const data = (await chrome.storage.local.get("discussions")) as StorageShape;
+    const discussion = data.discussions?.[currentSessionId];
+    if (!discussion) {
+        return;
+    }
+
+    const chatUrl = `${location.origin}${location.pathname}${location.search}`;
+    if (discussion.chatUrl === chatUrl) {
+        return;
+    }
+
+    await chrome.storage.local.set({
+        discussions: {
+            ...(data.discussions ?? {}),
+            [currentSessionId]: {
+                ...discussion,
+                chatUrl
+            }
+        }
+    });
+
+    console.log("[discuss-with-chatgpt-ext] chat URL saved", { currentSessionId, chatUrl });
+}
+
+/**
+ * Checks whether ChatGPT is showing a real conversation route.
+ */
+function isConversationUrl(): boolean {
+    return /^\/c\/[^/]+/.test(location.pathname);
+}
+
+/**
+ * Clears the visible composer for a side panel iframe with no discussion session.
+ */
+async function clearComposer(): Promise<void> {
+    lastAppliedStamp = null;
+
+    try {
+        removeNullThreadDraft();
+    } catch (error) {
+        console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", error);
+    }
+
+    const input = await waitForComposer();
+    if (!input) {
+        return;
+    }
+
+    insertPrompt(input, "");
+    console.log("[discuss-with-chatgpt-ext] composer cleared for unbound side panel frame");
 }
 
 /**
@@ -67,6 +215,10 @@ function attachStorageListenerOnce(): void {
 async function tryApplyLatestPrompt(): Promise<void> {
     const currentSessionId = getCurrentSessionId();
     if (!currentSessionId) {
+        if (isEmbeddedFrame() && !isConversationUrl()) {
+            await clearComposer();
+        }
+
         return;
     }
 
@@ -85,7 +237,7 @@ async function tryApplyLatestPrompt(): Promise<void> {
 
     const input = await waitForComposer();
     if (!input) {
-        console.warn("[discuss-with-chatgpt-ext] ChatGPT composer not found");
+        console.debug("[discuss-with-chatgpt-ext] ChatGPT composer not found");
         return;
     }
 
@@ -125,43 +277,8 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
         return;
     }
 
-    // chatGPT stores unsent new-thread composer drafts under this app-local key
-    const key = "oai/apps/conversationDrafts";
-
     try {
-        const raw = localStorage.getItem(key);
-        if (!raw) {
-            return;
-        }
-
-        const parsed = JSON.parse(raw) as {
-            drafts?: { id?: string }[];
-        };
-
-        if (!Array.isArray(parsed.drafts)) {
-            return;
-        }
-
-        // only remove ChatGPT's placeholder thread draft; leave real draft
-        // entries untouched
-        const nextDrafts = parsed.drafts.filter((draft) => draft.id !== "null_thread");
-
-        if (nextDrafts.length === parsed.drafts.length) {
-            return;
-        }
-
-        const nextValue = {
-            ...parsed,
-            drafts: nextDrafts
-        };
-
-        if (nextDrafts.length === 0) {
-            localStorage.removeItem(key);
-        } else {
-            localStorage.setItem(key, JSON.stringify(nextValue));
-        }
-
-        console.log("[discuss-with-chatgpt-ext] null_thread draft cleared");
+        removeNullThreadDraft();
     } catch (error) {
         console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", error);
     } finally {
@@ -177,6 +294,47 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
 }
 
 /**
+ * Removes ChatGPT's stored new-thread draft without touching real conversations.
+ */
+function removeNullThreadDraft(): void {
+    // chatGPT stores unsent new-thread composer drafts under this app-local key
+    const key = "oai/apps/conversationDrafts";
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+        return;
+    }
+
+    const parsed = JSON.parse(raw) as {
+        drafts?: { id?: string }[];
+    };
+
+    if (!Array.isArray(parsed.drafts)) {
+        return;
+    }
+
+    // only remove ChatGPT's placeholder thread draft; leave real draft
+    // entries untouched
+    const nextDrafts = parsed.drafts.filter((draft) => draft.id !== "null_thread");
+
+    if (nextDrafts.length === parsed.drafts.length) {
+        return;
+    }
+
+    const nextValue = {
+        ...parsed,
+        drafts: nextDrafts
+    };
+
+    if (nextDrafts.length === 0) {
+        localStorage.removeItem(key);
+    } else {
+        localStorage.setItem(key, JSON.stringify(nextValue));
+    }
+
+    console.log("[discuss-with-chatgpt-ext] null_thread draft cleared");
+}
+
+/**
  * Extracts the extension session id from ChatGPT's location hash.
  */
 function getCurrentSessionId(): string | null {
@@ -185,7 +343,12 @@ function getCurrentSessionId(): string | null {
         : window.location.hash;
 
     const params = new URLSearchParams(hash);
-    return params.get("dwc_session");
+    const sessionId = params.get("dwc_session");
+    if (sessionId) {
+        currentExtensionSessionId = sessionId;
+    }
+
+    return currentExtensionSessionId;
 }
 
 /**

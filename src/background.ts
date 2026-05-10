@@ -32,6 +32,8 @@ chrome.runtime.onStartup.addListener(() => {
     void ensurePanelConfiguredForAllTabs();
 });
 
+void ensurePanelConfiguredForAllTabs();
+
 /**
  * Enables the side panel for newly opened tabs.
  */
@@ -61,52 +63,62 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 /**
- * Starts a new discussion from the context menu, opens the tab-scoped side
- * panel, and stores the prompt for the content script to pick up.
+ * Opens the current tab's side panel when the extension toolbar icon is clicked.
+ *
+ * If the tab already has a discussion session, the side panel restores it from
+ * storage. Otherwise the panel opens to an empty ChatGPT composer.
+ */
+chrome.action.onClicked.addListener((tab) => {
+    if (!tab.id) {
+        return;
+    }
+
+    void openDiscussionPanel(tab.id);
+});
+
+/**
+ * Opens the tab-scoped side panel from the context menu and reuses any existing
+ * discussion session before creating a new one from the clicked page.
  */
 chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId !== MENU_ID || !tab?.id) {
         return;
     }
 
-    const nextTabId = tab.id;
-    const previousTabId = activeDiscussionTabId;
-
-    activeDiscussionTabId = nextTabId;
-
-    // keep only one tab-scoped discussion panel visible at a time
-    if (previousTabId && previousTabId !== nextTabId) {
-        chrome.sidePanel.close({ tabId: previousTabId }).catch((error) => {
-            console.warn("[discuss-with-chatgpt-ext] previous side panel close failed", {
-                previousTabId,
-                error
-            });
-        });
-    }
-
-    chrome.sidePanel.open({ tabId: nextTabId }).catch((error) => {
-        console.error("[discuss-with-chatgpt-ext] side panel open failed", {
-            nextTabId,
-            error
-        });
-    });
-
-    void handleDiscussClick(info, tab);
+    void handleContextMenuClick(info, tab);
 });
 
 /**
- * Removes the stored discussion when the user closes the side panel manually.
+ * Clears only active-panel bookkeeping when the side panel is closed.
+ *
+ * Discussion storage intentionally remains available so an accidentally closed
+ * panel can be restored from the extension icon or context menu.
  */
-chrome.sidePanel.onClosed.addListener(async (info) => {
+chrome.sidePanel.onClosed.addListener((info) => {
     if (info.tabId && info.tabId === activeDiscussionTabId) {
         activeDiscussionTabId = null;
     }
+});
 
-    if (typeof info.tabId !== "number") {
-        return;
+/**
+ * Handles extension settings actions.
+ */
+chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefined, _sender, sendResponse) => {
+    if (message?.type !== "clear-data-and-cache") {
+        return false;
     }
 
-    await clearDiscussionForTab(info.tabId);
+    void clearDataAndCache()
+        .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
+        .catch((error) => {
+            console.error("[discuss-with-chatgpt-ext] clearDataAndCache failed", error);
+            sendResponse({
+                ok: false,
+                error: error instanceof Error ? error.message : String(error)
+            } satisfies RuntimeResponse);
+        });
+
+    return true;
 });
 
 /**
@@ -138,7 +150,7 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
     try {
         await chrome.sidePanel.setOptions({
             tabId,
-            path: "sidepanel.html",
+            path: `sidepanel.html?tabId=${tabId}`,
             enabled: true
         });
     } catch (error) {
@@ -150,10 +162,120 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
 }
 
 /**
+ * Opens this extension's side panel for a tab and keeps one visible discussion
+ * panel active at a time.
+ */
+function openDiscussionPanel(tabId: number): void {
+    const previousTabId = activeDiscussionTabId;
+
+    activeDiscussionTabId = tabId;
+
+    chrome.sidePanel.open({ tabId }).catch((error) => {
+        console.error("[discuss-with-chatgpt-ext] side panel open failed", {
+            tabId,
+            message: getErrorMessage(error),
+            error
+        });
+    });
+
+    void ensurePanelConfiguredForTab(tabId);
+
+    // keep only one tab-scoped discussion panel visible at a time
+    if (previousTabId && previousTabId !== tabId) {
+        chrome.sidePanel.close({ tabId: previousTabId }).catch((error) => {
+            console.warn("[discuss-with-chatgpt-ext] previous side panel close failed", {
+                previousTabId,
+                error
+            });
+        });
+    }
+}
+
+/**
+ * Restores a tab's existing discussion session or creates one from the context
+ * menu click when none is stored yet.
+ */
+async function handleContextMenuClick(
+    info: chrome.contextMenus.OnClickData,
+    tab: chrome.tabs.Tab
+): Promise<void> {
+    if (!tab.id) {
+        return;
+    }
+
+    openDiscussionPanel(tab.id);
+
+    if (await hasDiscussionForTab(tab.id)) {
+        return;
+    }
+
+    await createDiscussionFromClick(info, tab);
+}
+
+/**
+ * Returns whether a tab has a stored session with a matching discussion entry.
+ */
+async function hasDiscussionForTab(tabId: number): Promise<boolean> {
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const sessionId = storage.tabSessionIds?.[String(tabId)];
+
+    return Boolean(sessionId && storage.discussions?.[sessionId]);
+}
+
+/**
+ * Closes open side panels and removes extension-owned persisted state.
+ */
+async function clearDataAndCache(): Promise<void> {
+    activeDiscussionTabId = null;
+
+    await chrome.storage.local.set({
+        clearAllDiscussionDraftsStamp: Date.now()
+    });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(
+        tabs
+            .filter((tab) => typeof tab.id === "number")
+            .map((tab) => {
+                return chrome.sidePanel.close({ tabId: tab.id! }).catch(() => undefined);
+            })
+    );
+
+    await chrome.storage.local.clear();
+    await clearSessionStorage();
+    await clearCacheStorage();
+    await ensurePanelConfiguredForAllTabs();
+}
+
+/**
+ * Clears optional extension session storage when the browser exposes it.
+ */
+async function clearSessionStorage(): Promise<void> {
+    const sessionStorage = (chrome.storage as { session?: chrome.storage.StorageArea }).session;
+    await sessionStorage?.clear();
+}
+
+/**
+ * Clears CacheStorage entries owned by the extension origin.
+ */
+async function clearCacheStorage(): Promise<void> {
+    if (typeof caches === "undefined") {
+        return;
+    }
+
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+}
+
+/**
  * Collects source data from the clicked tab, builds the ChatGPT prompt, and
  * stores it under a fresh session id for the side panel/content script pair.
  */
-async function handleDiscussClick(
+async function createDiscussionFromClick(
     info: chrome.contextMenus.OnClickData,
     tab: chrome.tabs.Tab
 ): Promise<void> {
@@ -207,7 +329,7 @@ async function handleDiscussClick(
 
         console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId, tabId: tab.id });
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] handleDiscussClick failed", error);
+        console.error("[discuss-with-chatgpt-ext] createDiscussionFromClick failed", error);
     }
 }
 
@@ -317,4 +439,11 @@ function escapeHtml(text: string): string {
                 return char;
         }
     });
+}
+
+/**
+ * Converts unknown caught values into useful log text.
+ */
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
