@@ -8,7 +8,7 @@ body {
 }
 
 .settings {
-    width: min(520px, calc(100% - 32px));
+    width: min(780px, calc(100% - 32px));
     margin: 48px auto;
 }
 
@@ -93,6 +93,19 @@ h2 {
 .session a:not([href]) {
     color: #80868b;
     text-decoration: none;
+}
+
+.sessionUrl {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+}
+
+.sessionLabel {
+    flex: 0 0 auto;
+    color: #5f6368;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 .sessionMeta,

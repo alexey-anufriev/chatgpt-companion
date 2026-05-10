@@ -87,11 +87,27 @@ function createSessionRow(
     const title = document.createElement("h3");
     title.textContent = discussion.source.title || "Page title is missing";
 
+    const sourceUrlRow = document.createElement("div");
+    sourceUrlRow.className = "sessionUrl";
+
+    const sourceUrlLabel = document.createElement("span");
+    sourceUrlLabel.className = "sessionLabel";
+    sourceUrlLabel.textContent = "Original URL:";
+
     const sourceUrl = document.createElement("a");
     sourceUrl.href = discussion.source.url || "#";
     sourceUrl.textContent = discussion.source.url || "URL is missing";
     sourceUrl.target = "_blank";
     sourceUrl.rel = "noreferrer";
+
+    sourceUrlRow.append(sourceUrlLabel, sourceUrl);
+
+    const chatUrlRow = document.createElement("div");
+    chatUrlRow.className = "sessionUrl";
+
+    const chatUrlLabel = document.createElement("span");
+    chatUrlLabel.className = "sessionLabel";
+    chatUrlLabel.textContent = "ChatGPT URL:";
 
     const chatUrl = document.createElement("a");
     chatUrl.href = discussion.chatUrl || "#";
@@ -102,6 +118,8 @@ function createSessionRow(
         chatUrl.removeAttribute("href");
     }
 
+    chatUrlRow.append(chatUrlLabel, chatUrl);
+
     const meta = document.createElement("div");
     meta.className = "sessionMeta";
     meta.textContent = [
@@ -111,7 +129,7 @@ function createSessionRow(
         `tab: ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
     ].join(" | ");
 
-    row.append(title, sourceUrl, chatUrl, meta);
+    row.append(title, sourceUrlRow, chatUrlRow, meta);
     return row;
 }
 
