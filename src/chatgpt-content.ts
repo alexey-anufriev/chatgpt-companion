@@ -277,15 +277,21 @@ function replaceContentEditableText(element: HTMLElement, text: string): void {
     element.replaceChildren();
 
     if (text.length > 0) {
-        // contenteditable composers need explicit BR nodes to preserve newlines
-        const lines = text.split("\n");
-        lines.forEach((line, index) => {
-            if (index > 0) {
-                element.append(document.createElement("br"));
-            }
+        const paragraphNodes = parsePromptParagraphs(text);
 
-            element.append(document.createTextNode(line));
-        });
+        if (paragraphNodes.length > 0) {
+            element.append(...paragraphNodes);
+        } else {
+            // contenteditable composers need explicit BR nodes to preserve newlines
+            const lines = text.split("\n");
+            lines.forEach((line, index) => {
+                if (index > 0) {
+                    element.append(document.createElement("br"));
+                }
+
+                element.append(document.createTextNode(line));
+            });
+        }
     }
 
     // move the caret after the inserted text so the composer behaves like a
@@ -294,6 +300,24 @@ function replaceContentEditableText(element: HTMLElement, text: string): void {
     range.collapse(false);
     selection?.removeAllRanges();
     selection?.addRange(range);
+}
+
+/**
+ * Parses extension-generated prompt HTML into real composer paragraph nodes.
+ */
+function parsePromptParagraphs(text: string): HTMLParagraphElement[] {
+    const template = document.createElement("template");
+    template.innerHTML = text.trim();
+
+    const nodes = Array.from(template.content.childNodes).filter((node) => {
+        return node.nodeType !== Node.TEXT_NODE || node.textContent?.trim();
+    });
+
+    if (nodes.length === 0 || nodes.some((node) => node.nodeName.toLowerCase() !== "p")) {
+        return [];
+    }
+
+    return nodes.map((node) => node.cloneNode(true) as HTMLParagraphElement);
 }
 
 /**

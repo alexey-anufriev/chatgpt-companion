@@ -294,5 +294,27 @@ function buildPrompt(data: DiscussSource): string {
  * boundaries instead of relying on blank-line spacing.
  */
 function paragraph(text: string): string {
-    return `<p>${text}</p>`;
+    return `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
+}
+
+/**
+ * Escapes page-provided text before it is embedded in the prompt HTML.
+ */
+function escapeHtml(text: string): string {
+    return text.replace(/[&<>"']/g, (char) => {
+        switch (char) {
+            case "&":
+                return "&amp;";
+            case "<":
+                return "&lt;";
+            case ">":
+                return "&gt;";
+            case "\"":
+                return "&quot;";
+            case "'":
+                return "&#39;";
+            default:
+                return char;
+        }
+    });
 }
