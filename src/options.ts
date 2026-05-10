@@ -111,7 +111,7 @@ if (
     !sessionsListEl ||
     !sessionCountEl
 ) {
-    console.error("[discuss-with-chatgpt-ext] options DOM elements not found");
+    console.error("[chatgpt-companion] options DOM elements not found");
 } else {
     preferredLanguageInput.addEventListener("input", () => {
         updateSaveButtonState();
@@ -168,7 +168,7 @@ async function loadSettings(): Promise<void> {
 
         if (syncState.cloudSyncEnabled) {
             await pullOptionsCloudSettingsToLocal().catch((error) => {
-                console.error("[discuss-with-chatgpt-ext] cloud settings pull failed", error);
+                console.error("[chatgpt-companion] cloud settings pull failed", error);
             });
         }
 
@@ -236,14 +236,14 @@ async function saveSettings(): Promise<void> {
                 await pushOptionsCloudSettings(nextPreferredLanguage, nextPromptTemplates);
                 statusEl.textContent = "Settings saved and queued for cloud sync.";
             } catch (error) {
-                console.error("[discuss-with-chatgpt-ext] cloud settings save failed", error);
+                console.error("[chatgpt-companion] cloud settings save failed", error);
                 statusEl.textContent = "Settings saved locally. Cloud sync failed.";
             }
         } else {
             statusEl.textContent = "Settings saved.";
         }
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] save settings failed", error);
+        console.error("[chatgpt-companion] save settings failed", error);
         statusEl.textContent = error instanceof Error ? error.message : "Save operation failed.";
     } finally {
         isSavingSettings = false;
@@ -291,7 +291,7 @@ async function enableCloudSync(): Promise<void> {
         renderCloudSyncButton();
         await loadSettings();
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] enable cloud sync failed", error);
+        console.error("[chatgpt-companion] enable cloud sync failed", error);
         statusEl.textContent = error instanceof Error ? error.message : "Cloud sync enable failed.";
     } finally {
         isChangingCloudSync = false;
@@ -315,7 +315,7 @@ async function disableCloudSync(): Promise<void> {
         savedCloudSyncEnabled = false;
         statusEl.textContent = "Cloud sync disabled. Local settings kept.";
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] disable cloud sync failed", error);
+        console.error("[chatgpt-companion] disable cloud sync failed", error);
         statusEl.textContent = error instanceof Error ? error.message : "Cloud sync disable failed.";
     } finally {
         isChangingCloudSync = false;
@@ -476,7 +476,7 @@ async function requestClearDataAndCache(): Promise<void> {
         await loadSettings();
         await renderPersistedSessions();
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] clear data request failed", error);
+        console.error("[chatgpt-companion] clear data request failed", error);
         statusEl.textContent = error instanceof Error ? error.message : "Clear operation failed.";
     } finally {
         clearDataBtn.disabled = false;

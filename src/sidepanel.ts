@@ -49,12 +49,12 @@ async function init(): Promise<void> {
         !restartSessionBtn ||
         !chatgptFrame
     ) {
-        console.error("[discuss-with-chatgpt-ext] side panel DOM elements not found");
+        console.error("[chatgpt-companion] side panel DOM elements not found");
         return;
     }
 
     if (panelTabId === null) {
-        console.error("[discuss-with-chatgpt-ext] side panel tab id not found");
+        console.error("[chatgpt-companion] side panel tab id not found");
         return;
     }
 
@@ -238,7 +238,7 @@ async function restartPanelDiscussion(): Promise<void> {
             throw new Error(response?.error || "Restart operation failed");
         }
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] restart discussion failed", error);
+        console.error("[chatgpt-companion] restart discussion failed", error);
     } finally {
         restartSessionBtn.disabled = false;
     }

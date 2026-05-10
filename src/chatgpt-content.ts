@@ -42,7 +42,7 @@ void bootstrap();
  * extension session once the composer is available.
  */
 async function bootstrap(): Promise<void> {
-    console.log("[discuss-with-chatgpt-ext] bootstrapper loaded", location.href);
+    console.log("[chatgpt-companion] bootstrapper loaded", location.href);
 
     await waitForDocumentReady();
 
@@ -177,7 +177,7 @@ async function rememberCurrentChatUrl(): Promise<void> {
         }
     });
 
-    console.log("[discuss-with-chatgpt-ext] chat URL saved", { currentSessionId, chatUrl });
+    console.log("[chatgpt-companion] chat URL saved", { currentSessionId, chatUrl });
 }
 
 /**
@@ -196,7 +196,7 @@ async function clearComposer(): Promise<void> {
     try {
         removeNullThreadDraft();
     } catch (error) {
-        console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", error);
+        console.warn("[chatgpt-companion] failed to clear null_thread draft", error);
     }
 
     const input = await waitForComposer();
@@ -205,7 +205,7 @@ async function clearComposer(): Promise<void> {
     }
 
     insertPrompt(input, "");
-    console.log("[discuss-with-chatgpt-ext] composer cleared for unbound side panel frame");
+    console.log("[chatgpt-companion] composer cleared for unbound side panel frame");
 }
 
 /**
@@ -237,7 +237,7 @@ async function tryApplyLatestPrompt(): Promise<void> {
 
     const input = await waitForComposer();
     if (!input) {
-        console.debug("[discuss-with-chatgpt-ext] ChatGPT composer not found");
+        console.debug("[chatgpt-companion] ChatGPT composer not found");
         return;
     }
 
@@ -257,9 +257,9 @@ async function tryApplyLatestPrompt(): Promise<void> {
     });
 
     if (discussion.prompt) {
-        console.log("[discuss-with-chatgpt-ext] prompt inserted", { currentSessionId });
+        console.log("[chatgpt-companion] prompt inserted", { currentSessionId });
     } else {
-        console.log("[discuss-with-chatgpt-ext] composer cleared", { currentSessionId });
+        console.log("[chatgpt-companion] composer cleared", { currentSessionId });
     }
 }
 
@@ -280,7 +280,7 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
     try {
         removeNullThreadDraft();
     } catch (error) {
-        console.warn("[discuss-with-chatgpt-ext] failed to clear null_thread draft", error);
+        console.warn("[chatgpt-companion] failed to clear null_thread draft", error);
     } finally {
         // clear the close signal only if this page still owns it; a newer close
         // event for another session should remain visible to that tab
@@ -331,7 +331,7 @@ function removeNullThreadDraft(): void {
         localStorage.setItem(key, JSON.stringify(nextValue));
     }
 
-    console.log("[discuss-with-chatgpt-ext] null_thread draft cleared");
+    console.log("[chatgpt-companion] null_thread draft cleared");
 }
 
 /**

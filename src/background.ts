@@ -174,7 +174,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
                 }
             })
             .catch((error) => {
-                console.error("[discuss-with-chatgpt-ext] cloud settings pull failed", error);
+                console.error("[chatgpt-companion] cloud settings pull failed", error);
             });
     }
 });
@@ -219,7 +219,7 @@ async function ensurePanelConfiguredForAllTabs(): Promise<void> {
                 .map((tab) => ensurePanelConfiguredForTab(tab.id!))
         );
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] ensurePanelConfiguredForAllTabs failed", error);
+        console.error("[chatgpt-companion] ensurePanelConfiguredForAllTabs failed", error);
     }
 }
 
@@ -230,7 +230,7 @@ async function initializeSettingsAndMenus(): Promise<void> {
     try {
         await pullCloudSettingsToLocal();
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] cloud settings startup pull failed", error);
+        console.error("[chatgpt-companion] cloud settings startup pull failed", error);
     } finally {
         createContextMenus();
     }
@@ -327,7 +327,7 @@ async function restoreMappingsAndConfigurePanels(): Promise<void> {
         await restoreDiscussionMappingsForOpenTabs();
         await ensurePanelConfiguredForAllTabs();
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] restoreMappingsAndConfigurePanels failed", error);
+        console.error("[chatgpt-companion] restoreMappingsAndConfigurePanels failed", error);
     }
 }
 
@@ -431,7 +431,7 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
             enabled: true
         });
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] ensurePanelConfiguredForTab failed", {
+        console.error("[chatgpt-companion] ensurePanelConfiguredForTab failed", {
             tabId,
             error
         });
@@ -443,7 +443,7 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
  */
 function openDiscussionPanel(tabId: number): void {
     chrome.sidePanel.open({ tabId }).catch((error) => {
-        console.error("[discuss-with-chatgpt-ext] side panel open failed", {
+        console.error("[chatgpt-companion] side panel open failed", {
             tabId,
             message: getErrorMessage(error),
             error
@@ -674,7 +674,7 @@ async function createDiscussionFromTab(
 
         return await createDiscussionFromSource(tab.id, result, promptTemplate);
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] createDiscussionFromTab failed", error);
+        console.error("[chatgpt-companion] createDiscussionFromTab failed", error);
         return false;
     }
 }
@@ -706,7 +706,7 @@ async function createDiscussionFromLink(
 
         return await createDiscussionFromSource(tab.id, result, promptTemplate);
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] createDiscussionFromLink failed", error);
+        console.error("[chatgpt-companion] createDiscussionFromLink failed", error);
         return false;
     }
 }
@@ -753,7 +753,7 @@ async function createDiscussionFromSource(
         closeDiscussionSessionId: undefined
     });
 
-    console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId, tabId });
+    console.log("[chatgpt-companion] prompt saved", { sessionId, tabId });
     return true;
 }
 
@@ -1063,7 +1063,7 @@ function sendErrorResponse(
     error: unknown,
     sendResponse: (response: RuntimeResponse) => void
 ): void {
-    console.error(`[discuss-with-chatgpt-ext] ${label}`, error);
+    console.error(`[chatgpt-companion] ${label}`, error);
     sendResponse({
         ok: false,
         error: getErrorMessage(error)
