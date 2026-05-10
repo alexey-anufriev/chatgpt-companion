@@ -6,6 +6,10 @@ const copyPromptBtn = document.getElementById("copyPromptBtn") as HTMLButtonElem
 const reinsertBtn = document.getElementById("reinsertBtn") as HTMLButtonElement | null;
 const settingsBtn = document.getElementById("settingsBtn") as HTMLButtonElement | null;
 const closeBtn = document.getElementById("closeBtn") as HTMLButtonElement | null;
+const languageMismatchPrompt = document.getElementById("languageMismatchPrompt") as HTMLDivElement | null;
+const languageMismatchText = document.getElementById("languageMismatchText") as HTMLDivElement | null;
+const continueSessionBtn = document.getElementById("continueSessionBtn") as HTMLButtonElement | null;
+const restartSessionBtn = document.getElementById("restartSessionBtn") as HTMLButtonElement | null;
 const chatgptFrame = document.getElementById("chatgptFrame") as HTMLIFrameElement | null;
 const panelTabId = getPanelTabId();
 
@@ -32,7 +36,19 @@ let currentIframeSessionId: string | null = null;
 void init();
 
 async function init(): Promise<void> {
-    if (!sourceTitleEl || !sourceUrlEl || !copyPromptBtn || !reinsertBtn || !settingsBtn || !closeBtn || !chatgptFrame) {
+    if (
+        !sourceTitleEl ||
+        !sourceUrlEl ||
+        !copyPromptBtn ||
+        !reinsertBtn ||
+        !settingsBtn ||
+        !closeBtn ||
+        !languageMismatchPrompt ||
+        !languageMismatchText ||
+        !continueSessionBtn ||
+        !restartSessionBtn ||
+        !chatgptFrame
+    ) {
         console.error("[discuss-with-chatgpt-ext] side panel DOM elements not found");
         return;
     }
@@ -46,6 +62,7 @@ async function init(): Promise<void> {
     attachStorageListener();
 
     await renderSource();
+    await renderLanguageMismatchPrompt();
     await syncIframeSession();
 }
 
@@ -61,6 +78,10 @@ function attachStorageListener(): void {
         if (changes["discussions"] || changes["tabSessionIds"]) {
             await renderSource();
             await syncIframeSession();
+        }
+
+        if (changes["pendingLanguageMismatches"]) {
+            await renderLanguageMismatchPrompt();
         }
     });
 }
@@ -106,6 +127,14 @@ function attachEvents(): void {
         void chrome.runtime.openOptionsPage();
     });
 
+    continueSessionBtn?.addEventListener("click", () => {
+        void clearPanelLanguageMismatch();
+    });
+
+    restartSessionBtn?.addEventListener("click", () => {
+        void restartPanelDiscussion();
+    });
+
     closeBtn?.addEventListener("click", async () => {
         if (panelTabId === null) {
             return;
@@ -113,7 +142,8 @@ function attachEvents(): void {
 
         const storage = (await chrome.storage.local.get([
             "discussions",
-            "tabSessionIds"
+            "tabSessionIds",
+            "pendingLanguageMismatches"
         ])) as StorageShape;
         const tabKey = String(panelTabId);
         const sessionId = storage.tabSessionIds?.[tabKey];
@@ -128,6 +158,7 @@ function attachEvents(): void {
         await chrome.storage.local.set({
             discussions,
             tabSessionIds,
+            pendingLanguageMismatches: removePanelLanguageMismatch(storage.pendingLanguageMismatches),
             closeDiscussionSessionId: sessionId
         });
 
@@ -137,6 +168,102 @@ function attachEvents(): void {
 
         window.close();
     });
+}
+
+/**
+ * Renders a tab-scoped language mismatch prompt when one is pending.
+ */
+async function renderLanguageMismatchPrompt(): Promise<void> {
+    if (!languageMismatchPrompt || !languageMismatchText) {
+        return;
+    }
+
+    const mismatch = await getPanelLanguageMismatch();
+
+    if (!mismatch) {
+        languageMismatchPrompt.classList.add("hidden");
+        languageMismatchText.textContent = "";
+        return;
+    }
+
+    languageMismatchText.textContent =
+        `Original session restored. It was started in ${mismatch.currentLanguage}, ` +
+        `but you selected ${mismatch.requestedLanguage}. Continue with this session or restart the discussion?`;
+    languageMismatchPrompt.classList.remove("hidden");
+}
+
+/**
+ * Clears this panel tab's pending language mismatch prompt.
+ */
+async function clearPanelLanguageMismatch(): Promise<void> {
+    if (panelTabId === null) {
+        return;
+    }
+
+    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+    await chrome.storage.local.set({
+        pendingLanguageMismatches: removePanelLanguageMismatch(storage.pendingLanguageMismatches)
+    });
+}
+
+/**
+ * Replaces the restored session with a new discussion in the requested language.
+ */
+async function restartPanelDiscussion(): Promise<void> {
+    if (!restartSessionBtn) {
+        return;
+    }
+
+    const mismatch = await getPanelLanguageMismatch();
+    if (!mismatch) {
+        return;
+    }
+
+    restartSessionBtn.disabled = true;
+
+    try {
+        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+            type: "restart-discussion",
+            tabId: mismatch.tabId,
+            requestedLanguage: mismatch.requestedLanguage,
+            selectionText: mismatch.selectionText
+        });
+
+        if (!response?.ok) {
+            throw new Error(response?.error || "Restart operation failed");
+        }
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] restart discussion failed", error);
+    } finally {
+        restartSessionBtn.disabled = false;
+    }
+}
+
+/**
+ * Returns the pending language mismatch for this panel tab.
+ */
+async function getPanelLanguageMismatch(): Promise<PendingLanguageMismatch | null> {
+    if (panelTabId === null) {
+        return null;
+    }
+
+    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+    return storage.pendingLanguageMismatches?.[String(panelTabId)] ?? null;
+}
+
+/**
+ * Removes this panel tab's language mismatch from a mismatch map.
+ */
+function removePanelLanguageMismatch(
+    pendingLanguageMismatches: Record<string, PendingLanguageMismatch> | undefined
+): Record<string, PendingLanguageMismatch> {
+    if (panelTabId === null) {
+        return pendingLanguageMismatches ?? {};
+    }
+
+    const nextPendingLanguageMismatches = { ...(pendingLanguageMismatches ?? {}) };
+    delete nextPendingLanguageMismatches[String(panelTabId)];
+    return nextPendingLanguageMismatches;
 }
 
 /**

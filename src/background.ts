@@ -6,6 +6,7 @@ const MENU_PARENT_ID = "discuss-in-chatgpt";
 const MENU_ORIGINAL_LANGUAGE_ID = "discuss-in-chatgpt-original-language";
 const MENU_PREFERRED_LANGUAGE_PREFIX = "discuss-in-chatgpt-preferred-language-";
 const DEFAULT_PREFERRED_LANGUAGE = "English";
+const ORIGINAL_LANGUAGE_LABEL = "Original language";
 
 /**
  * Registers the context menu after install and enables side panel support for
@@ -49,6 +50,7 @@ chrome.tabs.onUpdated.addListener((tabId, _changeInfo, tab) => {
  */
 chrome.tabs.onRemoved.addListener((tabId) => {
     void detachDiscussionFromTab(tabId);
+    void clearPendingLanguageMismatch(tabId);
 });
 
 /**
@@ -92,21 +94,22 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
  * Handles extension settings actions.
  */
 chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefined, _sender, sendResponse) => {
-    if (message?.type !== "clear-data-and-cache") {
-        return false;
+    switch (message?.type) {
+        case "clear-data-and-cache":
+            void clearDataAndCache()
+                .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("clearDataAndCache failed", error, sendResponse));
+            return true;
+
+        case "restart-discussion":
+            void restartDiscussion(message)
+                .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("restartDiscussion failed", error, sendResponse));
+            return true;
+
+        default:
+            return false;
     }
-
-    void clearDataAndCache()
-        .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
-        .catch((error) => {
-            console.error("[discuss-with-chatgpt-ext] clearDataAndCache failed", error);
-            sendResponse({
-                ok: false,
-                error: error instanceof Error ? error.message : String(error)
-            } satisfies RuntimeResponse);
-        });
-
-    return true;
 });
 
 /**
@@ -339,25 +342,29 @@ async function handleContextMenuClick(
 
     openDiscussionPanel(tab.id);
 
-    if (await hasDiscussionForTab(tab.id)) {
+    const preferredLanguage = await getMenuPreferredLanguage(menuItemId);
+    const existingDiscussion = await getDiscussionForTab(tab.id);
+
+    if (existingDiscussion) {
+        await handleExistingDiscussionLanguage(tab.id, info.selectionText ?? "", existingDiscussion, preferredLanguage);
         return;
     }
 
-    const preferredLanguage = await getMenuPreferredLanguage(menuItemId);
-    await createDiscussionFromClick(info, tab, preferredLanguage);
+    await clearPendingLanguageMismatch(tab.id);
+    await createDiscussionFromTab(tab, info.selectionText ?? "", preferredLanguage);
 }
 
 /**
- * Returns whether a tab has a stored session with a matching discussion entry.
+ * Returns a tab's stored session with a matching discussion entry.
  */
-async function hasDiscussionForTab(tabId: number): Promise<boolean> {
+async function getDiscussionForTab(tabId: number): Promise<DiscussionState | null> {
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
     ])) as StorageShape;
     const sessionId = storage.tabSessionIds?.[String(tabId)];
 
-    return Boolean(sessionId && storage.discussions?.[sessionId]);
+    return sessionId ? storage.discussions?.[sessionId] ?? null : null;
 }
 
 /**
@@ -406,16 +413,94 @@ async function clearCacheStorage(): Promise<void> {
 }
 
 /**
+ * Stores or clears the language decision needed for an existing session.
+ */
+async function handleExistingDiscussionLanguage(
+    tabId: number,
+    selectionText: string,
+    discussion: DiscussionState,
+    preferredLanguage?: string
+): Promise<void> {
+    const requestedLanguage = preferredLanguage ?? ORIGINAL_LANGUAGE_LABEL;
+    const currentLanguage = discussion.responseLanguage ?? ORIGINAL_LANGUAGE_LABEL;
+
+    if (requestedLanguage === currentLanguage) {
+        await clearPendingLanguageMismatch(tabId);
+        return;
+    }
+
+    await setPendingLanguageMismatch({
+        tabId,
+        currentLanguage,
+        requestedLanguage,
+        selectionText,
+        stamp: Date.now()
+    });
+}
+
+/**
+ * Restarts a tab discussion from the side panel language mismatch prompt.
+ */
+async function restartDiscussion(message: Partial<RuntimeMessage>): Promise<void> {
+    if (message.type !== "restart-discussion" || typeof message.tabId !== "number") {
+        throw new Error("Restart request is missing tab id");
+    }
+
+    if (typeof message.requestedLanguage !== "string") {
+        throw new Error("Restart request is missing language");
+    }
+
+    const tab = await chrome.tabs.get(message.tabId);
+    const restarted = await createDiscussionFromTab(tab, message.selectionText ?? "", message.requestedLanguage);
+    if (!restarted) {
+        throw new Error("Restart operation failed");
+    }
+
+    await clearPendingLanguageMismatch(message.tabId);
+}
+
+/**
+ * Stores a tab-scoped language mismatch prompt for the side panel.
+ */
+async function setPendingLanguageMismatch(mismatch: PendingLanguageMismatch): Promise<void> {
+    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+
+    await chrome.storage.local.set({
+        pendingLanguageMismatches: {
+            ...(storage.pendingLanguageMismatches ?? {}),
+            [String(mismatch.tabId)]: mismatch
+        }
+    });
+}
+
+/**
+ * Clears a tab-scoped language mismatch prompt.
+ */
+async function clearPendingLanguageMismatch(tabId: number): Promise<void> {
+    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+    const tabKey = String(tabId);
+
+    if (!storage.pendingLanguageMismatches?.[tabKey]) {
+        return;
+    }
+
+    const pendingLanguageMismatches = { ...(storage.pendingLanguageMismatches ?? {}) };
+    delete pendingLanguageMismatches[tabKey];
+
+    await chrome.storage.local.set({ pendingLanguageMismatches });
+}
+
+/**
  * Collects source data from the clicked tab, builds the ChatGPT prompt, and
  * stores it under a fresh session id for the side panel/content script pair.
  */
-async function createDiscussionFromClick(
-    info: chrome.contextMenus.OnClickData,
+async function createDiscussionFromTab(
     tab: chrome.tabs.Tab,
+    selectionText: string,
     preferredLanguage?: string
-): Promise<void> {
+): Promise<boolean> {
     if (!tab.id) {
-        return;
+        return false;
     }
 
     try {
@@ -423,12 +508,12 @@ async function createDiscussionFromClick(
         const injectionResults = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: collectPageData,
-            args: [info.selectionText ?? ""]
+            args: [selectionText]
         });
 
         const result = injectionResults[0]?.result;
         if (!result) {
-            return;
+            return false;
         }
 
         const prompt = buildPrompt(result, preferredLanguage);
@@ -450,7 +535,8 @@ async function createDiscussionFromClick(
             prompt,
             stamp: Date.now(),
             source: result,
-            consumed: false
+            consumed: false,
+            responseLanguage: preferredLanguage ?? ORIGINAL_LANGUAGE_LABEL
         };
         tabSessionIds[String(tab.id)] = sessionId;
 
@@ -463,8 +549,10 @@ async function createDiscussionFromClick(
         });
 
         console.log("[discuss-with-chatgpt-ext] prompt saved", { sessionId, tabId: tab.id });
+        return true;
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] createDiscussionFromClick failed", error);
+        console.error("[discuss-with-chatgpt-ext] createDiscussionFromTab failed", error);
+        return false;
     }
 }
 
@@ -604,4 +692,19 @@ function escapeHtml(text: string): string {
  */
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Sends a normalized runtime error response and keeps logs consistent.
+ */
+function sendErrorResponse(
+    label: string,
+    error: unknown,
+    sendResponse: (response: RuntimeResponse) => void
+): void {
+    console.error(`[discuss-with-chatgpt-ext] ${label}`, error);
+    sendResponse({
+        ok: false,
+        error: getErrorMessage(error)
+    });
 }

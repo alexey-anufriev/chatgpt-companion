@@ -67,6 +67,36 @@ button:hover {
     background: #2a2a2a;
 }
 
+.hidden {
+    display: none;
+}
+
+.languageMismatch {
+    display: grid;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #3a3420;
+    background: #2a2417;
+}
+
+.languageMismatch.hidden {
+    display: none;
+}
+
+.languageMismatchText {
+    color: #f3e5b5;
+    line-height: 1.35;
+}
+
+.languageMismatchActions {
+    display: flex;
+    gap: 8px;
+}
+
+.languageMismatchActions button {
+    flex: 1;
+}
+
 .frameWrap {
     flex: 1;
     min-height: 0;

@@ -1,4 +1,5 @@
 const OPTIONS_DEFAULT_PREFERRED_LANGUAGE = "English";
+const OPTIONS_ORIGINAL_LANGUAGE_LABEL = "Original language";
 
 const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
 const saveSettingsBtn = document.getElementById("saveSettingsBtn") as HTMLButtonElement | null;
@@ -187,6 +188,7 @@ function createSessionRow(
     meta.className = "sessionMeta";
     meta.textContent = [
         `session: ${sessionId}`,
+        `language: ${discussion.responseLanguage || OPTIONS_ORIGINAL_LANGUAGE_LABEL}`,
         `updated: ${new Date(discussion.stamp).toLocaleString()}`,
         `consumed: ${discussion.consumed ? "yes" : "no"}`,
         `tab: ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
