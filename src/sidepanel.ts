@@ -4,6 +4,7 @@ const sourceTitleEl = document.getElementById("sourceTitle") as HTMLDivElement |
 const sourceUrlEl = document.getElementById("sourceUrl") as HTMLDivElement | null;
 const copyPromptBtn = document.getElementById("copyPromptBtn") as HTMLButtonElement | null;
 const reinsertBtn = document.getElementById("reinsertBtn") as HTMLButtonElement | null;
+const settingsBtn = document.getElementById("settingsBtn") as HTMLButtonElement | null;
 const closeBtn = document.getElementById("closeBtn") as HTMLButtonElement | null;
 const chatgptFrame = document.getElementById("chatgptFrame") as HTMLIFrameElement | null;
 const panelTabId = getPanelTabId();
@@ -31,7 +32,7 @@ let currentIframeSessionId: string | null = null;
 void init();
 
 async function init(): Promise<void> {
-    if (!sourceTitleEl || !sourceUrlEl || !copyPromptBtn || !reinsertBtn || !closeBtn || !chatgptFrame) {
+    if (!sourceTitleEl || !sourceUrlEl || !copyPromptBtn || !reinsertBtn || !settingsBtn || !closeBtn || !chatgptFrame) {
         console.error("[discuss-with-chatgpt-ext] side panel DOM elements not found");
         return;
     }
@@ -99,6 +100,10 @@ function attachEvents(): void {
         };
 
         await chrome.storage.local.set({ discussions });
+    });
+
+    settingsBtn?.addEventListener("click", () => {
+        void chrome.runtime.openOptionsPage();
     });
 
     closeBtn?.addEventListener("click", async () => {

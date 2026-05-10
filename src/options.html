@@ -13,6 +13,15 @@
 <body>
 <main class="settings">
     <h1>ChatGPT Companion Settings</h1>
+
+    <section class="sessions">
+        <div class="sessionsHeader">
+            <h2>Persisted Sessions</h2>
+            <span id="sessionCount" class="sessionCount">0</span>
+        </div>
+        <div id="sessionsList" class="sessionsList"></div>
+    </section>
+
     <button id="clearDataBtn" type="button">Clear Data and Cache</button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
 </main>
