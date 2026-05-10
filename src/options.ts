@@ -130,7 +130,7 @@ if (
             id: crypto.randomUUID(),
             name: "New Prompt",
             template: OPTIONS_NEW_PROMPT_TEMPLATE
-        });
+        }, true);
         updateSaveButtonState();
     });
 
@@ -365,17 +365,36 @@ async function readOptionsCloudSettings(): Promise<StorageShape> {
     return (await chrome.storage.sync.get(OPTIONS_SYNC_SETTING_KEYS)) as StorageShape;
 }
 
-function addPromptTemplateEditor(promptTemplate: PromptTemplate): void {
+function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = false): void {
     if (!promptTemplatesListEl) {
         return;
     }
 
     const row = document.createElement("article");
     row.className = "promptTemplate";
+    row.classList.toggle("expanded", expanded);
     row.dataset.templateId = promptTemplate.id;
 
     const header = document.createElement("div");
     header.className = "promptTemplateHeader";
+
+    const title = document.createElement("span");
+    title.className = "promptTemplateTitle";
+    title.textContent = promptTemplate.name || "Prompt";
+
+    const actions = document.createElement("div");
+    actions.className = "promptTemplateActions";
+
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.textContent = expanded ? "Collapse" : "Edit";
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.textContent = "Remove";
+
+    const body = document.createElement("div");
+    body.className = "promptTemplateBody";
 
     const nameInput = document.createElement("input");
     nameInput.type = "text";
@@ -383,28 +402,31 @@ function addPromptTemplateEditor(promptTemplate: PromptTemplate): void {
     nameInput.placeholder = "Prompt name";
     nameInput.className = "promptTemplateName";
 
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.textContent = "Remove";
-
     const templateInput = document.createElement("textarea");
     templateInput.value = promptTemplate.template;
     templateInput.className = "promptTemplateText";
     templateInput.spellcheck = false;
 
     nameInput.addEventListener("input", () => {
+        title.textContent = nameInput.value.trim() || "Prompt";
         updateSaveButtonState();
     });
     templateInput.addEventListener("input", () => {
         updateSaveButtonState();
+    });
+    editButton.addEventListener("click", () => {
+        const isExpanded = row.classList.toggle("expanded");
+        editButton.textContent = isExpanded ? "Collapse" : "Edit";
     });
     removeButton.addEventListener("click", () => {
         row.remove();
         updateSaveButtonState();
     });
 
-    header.append(nameInput, removeButton);
-    row.append(header, templateInput);
+    actions.append(editButton, removeButton);
+    header.append(title, actions);
+    body.append(nameInput, templateInput);
+    row.append(header, body);
     promptTemplatesListEl.append(row);
 }
 
