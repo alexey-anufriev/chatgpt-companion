@@ -19,14 +19,11 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 /**
- * Re-applies side panel options when Chrome restarts the extension service
- * worker.
+ * Prepares restored tabs without trying to open the side panel.
  */
 chrome.runtime.onStartup.addListener(() => {
-    void restorePanelStateForAllTabs();
+    void restoreMappingsAndConfigurePanels();
 });
-
-void restorePanelStateForAllTabs();
 
 /**
  * Enables the side panel for newly opened tabs.
@@ -126,12 +123,12 @@ async function ensurePanelConfiguredForAllTabs(): Promise<void> {
 /**
  * Reconnects persisted discussions to currently open tabs and enables panels.
  */
-async function restorePanelStateForAllTabs(): Promise<void> {
+async function restoreMappingsAndConfigurePanels(): Promise<void> {
     try {
         await restoreDiscussionMappingsForOpenTabs();
         await ensurePanelConfiguredForAllTabs();
     } catch (error) {
-        console.error("[discuss-with-chatgpt-ext] restorePanelStateForAllTabs failed", error);
+        console.error("[discuss-with-chatgpt-ext] restoreMappingsAndConfigurePanels failed", error);
     }
 }
 

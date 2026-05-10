@@ -105,10 +105,10 @@ function createSessionRow(
     const meta = document.createElement("div");
     meta.className = "sessionMeta";
     meta.textContent = [
-        `session ${sessionId}`,
-        `updated ${new Date(discussion.stamp).toLocaleString()}`,
-        `consumed ${discussion.consumed ? "yes" : "no"}`,
-        `tabs ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
+        `session: ${sessionId}`,
+        `updated: ${new Date(discussion.stamp).toLocaleString()}`,
+        `consumed: ${discussion.consumed ? "yes" : "no"}`,
+        `tab: ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
     ].join(" | ");
 
     row.append(title, sourceUrl, chatUrl, meta);
