@@ -60,6 +60,18 @@ const OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "Do not analyze or critique it.",
     "Use {preferred_language} for your response."
 ].join("\n");
+const OPTIONS_NEW_PROMPT_TEMPLATE = [
+    "Hi, I’d like to discuss the following content.",
+    "Title: {page_title}",
+    "URL: {page_url}",
+    "",
+    "{if selected_text}",
+    "And in particular selected excerpt:",
+    "{selected_text}",
+    "{/if}",
+    "",
+    "Use {preferred_language} for your response."
+].join("\n");
 const OPTIONS_PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
     "default",
     "default-translated",
@@ -103,7 +115,7 @@ if (
         addPromptTemplateEditor({
             id: crypto.randomUUID(),
             name: "New Prompt",
-            template: OPTIONS_DEFAULT_PROMPT_TEMPLATE
+            template: OPTIONS_NEW_PROMPT_TEMPLATE
         });
         updateSaveButtonState();
     });
