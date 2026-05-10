@@ -5,12 +5,6 @@
 const MENU_ID = "discuss-in-chatgpt";
 
 /**
- * Tracks the tab whose side panel is currently dedicated to an active
- * discussion, so opening a new discussion can close the previous panel.
- */
-let activeDiscussionTabId: number | null = null;
-
-/**
  * Registers the context menu after install and enables side panel support for
  * tabs that already exist.
  */
@@ -29,10 +23,10 @@ chrome.runtime.onInstalled.addListener(() => {
  * worker.
  */
 chrome.runtime.onStartup.addListener(() => {
-    void ensurePanelConfiguredForAllTabs();
+    void restorePanelStateForAllTabs();
 });
 
-void ensurePanelConfiguredForAllTabs();
+void restorePanelStateForAllTabs();
 
 /**
  * Enables the side panel for newly opened tabs.
@@ -40,6 +34,7 @@ void ensurePanelConfiguredForAllTabs();
 chrome.tabs.onCreated.addListener((tab) => {
     if (tab.id) {
         void ensurePanelConfiguredForTab(tab.id);
+        void restoreDiscussionMappingForTab(tab.id, tab.url);
     }
 });
 
@@ -47,19 +42,16 @@ chrome.tabs.onCreated.addListener((tab) => {
  * Re-enables the side panel after tab navigation updates its Chrome-managed
  * options.
  */
-chrome.tabs.onUpdated.addListener((tabId) => {
+chrome.tabs.onUpdated.addListener((tabId, _changeInfo, tab) => {
     void ensurePanelConfiguredForTab(tabId);
+    void restoreDiscussionMappingForTab(tabId, tab.url);
 });
 
 /**
- * Clears discussion storage and active-panel bookkeeping when a tab closes.
+ * Detaches the tab mapping when a tab closes while keeping discussion history.
  */
 chrome.tabs.onRemoved.addListener((tabId) => {
-    if (tabId === activeDiscussionTabId) {
-        activeDiscussionTabId = null;
-    }
-
-    void clearDiscussionForTab(tabId);
+    void detachDiscussionFromTab(tabId);
 });
 
 /**
@@ -86,18 +78,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }
 
     void handleContextMenuClick(info, tab);
-});
-
-/**
- * Clears only active-panel bookkeeping when the side panel is closed.
- *
- * Discussion storage intentionally remains available so an accidentally closed
- * panel can be restored from the extension icon or context menu.
- */
-chrome.sidePanel.onClosed.addListener((info) => {
-    if (info.tabId && info.tabId === activeDiscussionTabId) {
-        activeDiscussionTabId = null;
-    }
 });
 
 /**
@@ -144,6 +124,107 @@ async function ensurePanelConfiguredForAllTabs(): Promise<void> {
 }
 
 /**
+ * Reconnects persisted discussions to currently open tabs and enables panels.
+ */
+async function restorePanelStateForAllTabs(): Promise<void> {
+    try {
+        await restoreDiscussionMappingsForOpenTabs();
+        await ensurePanelConfiguredForAllTabs();
+    } catch (error) {
+        console.error("[discuss-with-chatgpt-ext] restorePanelStateForAllTabs failed", error);
+    }
+}
+
+/**
+ * Rebuilds tab-session mappings after Chrome restores tabs with new ids.
+ */
+async function restoreDiscussionMappingsForOpenTabs(): Promise<void> {
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const discussions = storage.discussions ?? {};
+    const discussionEntries = Object.entries(discussions);
+
+    if (discussionEntries.length === 0) {
+        await chrome.storage.local.set({ tabSessionIds: {} });
+        return;
+    }
+
+    const tabs = await chrome.tabs.query({});
+    const openTabIds = new Set(
+        tabs
+            .map((tab) => tab.id)
+            .filter((tabId): tabId is number => typeof tabId === "number")
+    );
+    const tabSessionIds: Record<string, string> = {};
+    const assignedSessionIds = new Set<string>();
+
+    for (const [tabId, sessionId] of Object.entries(storage.tabSessionIds ?? {})) {
+        const numericTabId = Number(tabId);
+        if (openTabIds.has(numericTabId) && discussions[sessionId]) {
+            tabSessionIds[tabId] = sessionId;
+            assignedSessionIds.add(sessionId);
+        }
+    }
+
+    for (const tab of tabs) {
+        if (typeof tab.id !== "number" || !tab.url || tabSessionIds[String(tab.id)]) {
+            continue;
+        }
+
+        const entry = discussionEntries.find(([sessionId, discussion]) => {
+            return !assignedSessionIds.has(sessionId) && discussion.source.url === tab.url;
+        });
+
+        if (!entry) {
+            continue;
+        }
+
+        const [sessionId] = entry;
+        tabSessionIds[String(tab.id)] = sessionId;
+        assignedSessionIds.add(sessionId);
+    }
+
+    await chrome.storage.local.set({ tabSessionIds });
+}
+
+/**
+ * Restores one tab mapping when a restored tab later receives its final URL.
+ */
+async function restoreDiscussionMappingForTab(tabId: number, tabUrl?: string): Promise<void> {
+    if (!tabUrl) {
+        return;
+    }
+
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+
+    if (storage.tabSessionIds?.[String(tabId)]) {
+        return;
+    }
+
+    const usedSessionIds = new Set(Object.values(storage.tabSessionIds ?? {}));
+    const entry = Object.entries(storage.discussions ?? {}).find(([sessionId, discussion]) => {
+        return !usedSessionIds.has(sessionId) && discussion.source.url === tabUrl;
+    });
+
+    if (!entry) {
+        return;
+    }
+
+    const [sessionId] = entry;
+    await chrome.storage.local.set({
+        tabSessionIds: {
+            ...(storage.tabSessionIds ?? {}),
+            [String(tabId)]: sessionId
+        }
+    });
+}
+
+/**
  * Enables the extension side panel for a single tab.
  */
 async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
@@ -162,14 +243,9 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
 }
 
 /**
- * Opens this extension's side panel for a tab and keeps one visible discussion
- * panel active at a time.
+ * Opens this extension's side panel for a tab.
  */
 function openDiscussionPanel(tabId: number): void {
-    const previousTabId = activeDiscussionTabId;
-
-    activeDiscussionTabId = tabId;
-
     chrome.sidePanel.open({ tabId }).catch((error) => {
         console.error("[discuss-with-chatgpt-ext] side panel open failed", {
             tabId,
@@ -179,16 +255,6 @@ function openDiscussionPanel(tabId: number): void {
     });
 
     void ensurePanelConfiguredForTab(tabId);
-
-    // keep only one tab-scoped discussion panel visible at a time
-    if (previousTabId && previousTabId !== tabId) {
-        chrome.sidePanel.close({ tabId: previousTabId }).catch((error) => {
-            console.warn("[discuss-with-chatgpt-ext] previous side panel close failed", {
-                previousTabId,
-                error
-            });
-        });
-    }
 }
 
 /**
@@ -229,8 +295,6 @@ async function hasDiscussionForTab(tabId: number): Promise<boolean> {
  * Closes open side panels and removes extension-owned persisted state.
  */
 async function clearDataAndCache(): Promise<void> {
-    activeDiscussionTabId = null;
-
     await chrome.storage.local.set({
         clearAllDiscussionDraftsStamp: Date.now()
     });
@@ -334,32 +398,20 @@ async function createDiscussionFromClick(
 }
 
 /**
- * Removes any discussion session associated with a tab and records the closed
- * session id so the ChatGPT content script can clear a stale draft.
+ * Removes the tab-to-session mapping while preserving the discussion for restore.
  */
-async function clearDiscussionForTab(tabId: number): Promise<void> {
-    const storage = (await chrome.storage.local.get([
-        "discussions",
-        "tabSessionIds"
-    ])) as StorageShape;
+async function detachDiscussionFromTab(tabId: number): Promise<void> {
+    const storage = (await chrome.storage.local.get("tabSessionIds")) as StorageShape;
     const tabKey = String(tabId);
-    const sessionId = storage.tabSessionIds?.[tabKey];
 
-    if (!sessionId) {
+    if (!storage.tabSessionIds?.[tabKey]) {
         return;
     }
 
-    const discussions = { ...(storage.discussions ?? {}) };
     const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
-
-    delete discussions[sessionId];
     delete tabSessionIds[tabKey];
 
-    await chrome.storage.local.set({
-        discussions,
-        tabSessionIds,
-        closeDiscussionSessionId: sessionId
-    });
+    await chrome.storage.local.set({ tabSessionIds });
 }
 
 /**
