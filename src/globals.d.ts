@@ -61,6 +61,8 @@ type PendingLanguageMismatch = {
     requestedPromptTemplateName: string;
     /** linked page URL to reuse if the user restarts a linked discussion */
     requestedLinkUrl?: string;
+    /** whether the new request targets different source text or URL */
+    requestedSourceChanged: boolean;
     /** selection text to reuse if the user restarts the discussion */
     selectionText: string;
     /** creation timestamp used to distinguish newer prompts */

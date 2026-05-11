@@ -13,7 +13,7 @@ const DEFAULT_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if {selected_text}}",
+    "{if selected_text}",
     "Selected excerpt:",
     "{selected_text}",
     "{/if}",
@@ -32,7 +32,7 @@ const DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if {selected_text}}",
+    "{if selected_text}",
     "Selected excerpt:",
     "{selected_text}",
     "{/if}",
@@ -51,7 +51,7 @@ const SHORT_SUMMARY_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if {selected_text}}",
+    "{if selected_text}",
     "Material:",
     "{selected_text}",
     "{/if}",
@@ -66,7 +66,7 @@ const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if {selected_text}}",
+    "{if selected_text}",
     "Material:",
     "{selected_text}",
     "{/if}",
@@ -465,28 +465,30 @@ async function handleContextMenuClick(
 
     const promptTemplate = await getMenuPromptTemplate(menuItemId);
     const preferredLanguage = await getPreferredLanguage();
+    const selectionText = info.selectionText ?? "";
     const requestedSourceUrl = info.linkUrl ?? tab.url ?? "";
     const existingDiscussion = await getDiscussionForTab(tab.id);
 
-    if (existingDiscussion && existingDiscussion.source.url === requestedSourceUrl) {
+    if (existingDiscussion) {
         await handleExistingDiscussionLanguage(
             tab.id,
-            info.selectionText ?? "",
+            selectionText,
             existingDiscussion,
             promptTemplate,
             getRequestedResponseLanguage(promptTemplate, preferredLanguage),
-            info.linkUrl
+            info.linkUrl,
+            existingDiscussion.source.url !== requestedSourceUrl || existingDiscussion.source.selection !== selectionText
         );
         return;
     }
 
     await clearPendingLanguageMismatch(tab.id);
     if (info.linkUrl) {
-        await createDiscussionFromLink(tab, info.linkUrl, info.selectionText ?? "", promptTemplate);
+        await createDiscussionFromLink(tab, info.linkUrl, selectionText, promptTemplate);
         return;
     }
 
-    await createDiscussionFromTab(tab, info.selectionText ?? "", promptTemplate);
+    await createDiscussionFromTab(tab, selectionText, promptTemplate);
 }
 
 /**
@@ -562,12 +564,17 @@ async function handleExistingDiscussionLanguage(
     discussion: DiscussionState,
     promptTemplate: PromptTemplate,
     requestedLanguage: string,
-    requestedLinkUrl?: string
+    requestedLinkUrl: string | undefined,
+    requestedSourceChanged: boolean
 ): Promise<void> {
     const currentLanguage = discussion.responseLanguage;
     const currentPromptTemplateName = discussion.promptTemplateName;
 
-    if (requestedLanguage === currentLanguage && promptTemplate.name === currentPromptTemplateName) {
+    if (
+        requestedLanguage === currentLanguage &&
+        promptTemplate.name === currentPromptTemplateName &&
+        !requestedSourceChanged
+    ) {
         await clearPendingLanguageMismatch(tabId);
         return;
     }
@@ -580,6 +587,7 @@ async function handleExistingDiscussionLanguage(
         requestedPromptTemplateId: promptTemplate.id,
         requestedPromptTemplateName: promptTemplate.name,
         requestedLinkUrl,
+        requestedSourceChanged,
         selectionText,
         stamp: Date.now()
     });
@@ -828,7 +836,7 @@ function buildPrompt(
  * Removes conditional template blocks when their macro value is absent.
  */
 function applyPromptConditionals(template: string, macros: Record<string, string>): string {
-    return template.replace(/\{if\s+\{([a-z0-9_]+)}}\n?([\s\S]*?)\n?\{\/if}/g, (_match, name: string, content: string) => {
+    return template.replace(/\{if\s+([a-z0-9_]+)}\n?([\s\S]*?)\n?\{\/if}/g, (_match, name: string, content: string) => {
         return macros[name]?.trim() ? content : "";
     });
 }

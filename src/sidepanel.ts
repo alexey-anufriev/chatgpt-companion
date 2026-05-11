@@ -186,11 +186,11 @@ async function renderLanguageMismatchPrompt(): Promise<void> {
         return;
     }
 
+    const sourceText = mismatch.requestedSourceChanged ? " and a different source or selection" : "";
     languageMismatchText.textContent =
-        "Original discussion was started with " +
-        `${mismatch.currentPromptTemplateName} (${mismatch.currentLanguage}), but you selected ` +
-        `${mismatch.requestedPromptTemplateName} (${mismatch.requestedLanguage}). ` +
-        "Continue with the original discussion or restart with the selected template?";
+        `Original discussion was started with ${mismatch.currentPromptTemplateName} (${mismatch.currentLanguage}). ` +
+        `New request uses ${mismatch.requestedPromptTemplateName} (${mismatch.requestedLanguage})${sourceText}. ` +
+        "Continue with the original discussion or restart with the new request?";
     languageMismatchPrompt.classList.remove("hidden");
 }
 
