@@ -621,7 +621,7 @@ async function continueDiscussion(message: Partial<RuntimeMessage>): Promise<voi
         throw new Error("Continue operation failed");
     }
 
-    await updateDiscussionPrompt(tab.id, source, promptTemplate);
+    await updateContinuationPrompt(tab.id, source, promptTemplate);
     await clearPendingLanguageMismatch(message.tabId);
 }
 
@@ -819,9 +819,9 @@ async function createDiscussionFromSource(
 }
 
 /**
- * Replaces the prompt in an existing session so it continues the same chat.
+ * Replaces only the pending prompt while preserving the original chat identity.
  */
-async function updateDiscussionPrompt(
+async function updateContinuationPrompt(
     tabId: number,
     source: DiscussSource,
     promptTemplate: PromptTemplate
@@ -844,10 +844,7 @@ async function updateDiscussionPrompt(
                 ...storage.discussions[sessionId],
                 prompt: buildPrompt(source, promptTemplate, preferredLanguage),
                 stamp: Date.now(),
-                source,
-                consumed: false,
-                responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
-                promptTemplateName: promptTemplate.name
+                consumed: false
             }
         },
         closeDiscussionSessionId: undefined
