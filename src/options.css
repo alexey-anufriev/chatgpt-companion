@@ -2,14 +2,14 @@ html,
 body {
     margin: 0;
     min-height: 100%;
-    background: #f7f8fa;
-    color: #202124;
-    font: 14px Inter, Arial, sans-serif;
+    background: linear-gradient(180deg, #f9fbff 0%, #f5f7fb 45%, #f2f5fa 100%);
+    color: #1f2937;
+    font: 14px/1.45 "Noto Sans", Arial, sans-serif;
 }
 
 .settings {
-    width: min(780px, calc(100% - 32px));
-    margin: 48px auto;
+    width: min(900px, calc(100% - 32px));
+    margin: 40px auto;
 }
 
 .settingsHeader {
@@ -17,18 +17,24 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #d9dee8;
 }
 
 .settingsActions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
 }
 
 h1 {
     margin: 0;
-    font-size: 22px;
-    font-weight: 600;
+    color: #111827;
+    font-size: 24px;
+    font-weight: 650;
+    line-height: 1.2;
 }
 
 .preferences {
@@ -36,18 +42,33 @@ h1 {
     gap: 8px;
 }
 
+.sectionDescription {
+    margin: -2px 0 2px;
+    color: #667085;
+    font-size: 12px;
+}
+
 .preferences input {
     width: 100%;
     box-sizing: border-box;
-    border: 1px solid #c4c7c5;
+    border: 1px solid #c7cedb;
     border-radius: 8px;
-    padding: 8px 10px;
-    color: #202124;
+    background: #fff;
+    padding: 9px 11px;
+    color: #1f2937;
     font: inherit;
 }
 
+.preferences input:focus,
+.promptTemplate input:focus,
+.promptTemplate textarea:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    outline: none;
+}
+
 .promptTemplates {
-    margin-top: 32px;
+    margin-top: 30px;
 }
 
 .promptTemplatesHeader {
@@ -55,20 +76,25 @@ h1 {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 12px;
+    margin-bottom: 4px;
 }
 
 .promptTemplatesList {
     display: grid;
-    gap: 10px;
+    gap: 8px;
 }
 
 .promptTemplate {
     display: grid;
-    border: 1px solid #dadce0;
+    border: 1px solid #d9dee8;
     border-radius: 8px;
     background: #fff;
-    padding: 10px 12px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    padding: 9px 10px;
+}
+
+.promptTemplate:hover {
+    border-color: #c7cedb;
 }
 
 .promptTemplateHeader {
@@ -81,6 +107,7 @@ h1 {
 .promptTemplateTitle {
     flex: 1;
     min-width: 0;
+    color: #111827;
     overflow: hidden;
     font-weight: 600;
     text-overflow: ellipsis;
@@ -96,7 +123,9 @@ h1 {
 .promptTemplateBody {
     display: none;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #eef1f6;
 }
 
 .promptTemplate.expanded .promptTemplateBody {
@@ -106,46 +135,83 @@ h1 {
 .promptTemplate input,
 .promptTemplate textarea {
     box-sizing: border-box;
-    border: 1px solid #c4c7c5;
+    border: 1px solid #c7cedb;
     border-radius: 8px;
-    padding: 8px 10px;
-    color: #202124;
+    background: #fff;
+    padding: 9px 11px;
+    color: #1f2937;
     font: inherit;
 }
 
 .promptTemplate textarea {
     width: 100%;
-    min-height: 220px;
+    min-height: 180px;
     resize: vertical;
 }
 
 button {
-    border: 1px solid #c4c7c5;
+    border: 1px solid #c7cedb;
     background: #fff;
-    color: #202124;
+    color: #1f2937;
     border-radius: 8px;
-    padding: 8px 12px;
+    padding: 8px 11px;
     cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1.2;
+    transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 
 button:hover:not(:disabled) {
-    background: #eef2f7;
+    border-color: #9aa7b8;
+    background: #f8fafc;
+}
+
+button:focus-visible {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    outline: none;
 }
 
 button:disabled {
-    color: #8a8f94;
+    color: #8b95a5;
     cursor: default;
+    opacity: 0.72;
+}
+
+#saveSettingsBtn:not(:disabled),
+.primaryButton:not(:disabled) {
+    border-color: #1d4ed8;
+    background: #2563eb;
+    color: #fff;
+}
+
+#saveSettingsBtn:hover:not(:disabled),
+.primaryButton:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+#clearDataBtn,
+.dangerButton {
+    border-color: #f0b8b8;
+    color: #9f1d1d;
+}
+
+#clearDataBtn:hover:not(:disabled),
+.dangerButton:hover:not(:disabled) {
+    border-color: #e58e8e;
+    background: #fff5f5;
 }
 
 .status {
     min-height: 20px;
-    margin: 16px 0 0;
-    color: #5f6368;
+    margin: 14px 0 0;
+    color: #667085;
 }
 
 .sessions {
-    margin-top: 32px;
-    margin-bottom: 24px;
+    margin-top: 30px;
+    margin-bottom: 20px;
 }
 
 .sessionsHeader {
@@ -153,47 +219,56 @@ button:disabled {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 12px;
+    margin-bottom: 4px;
 }
 
 h2,
 .preferences label {
     margin: 0;
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 650;
 }
 
 .sessionCount {
-    color: #5f6368;
+    min-width: 22px;
+    border-radius: 999px;
+    background: #e8eef8;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 22px;
+    text-align: center;
 }
 
 .sessionsList {
     display: grid;
-    gap: 10px;
+    gap: 8px;
 }
 
 .session {
     display: grid;
     gap: 6px;
-    border: 1px solid #dadce0;
+    border: 1px solid #d9dee8;
     border-radius: 8px;
     background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     padding: 12px;
 }
 
 .session h3 {
     margin: 0;
+    color: #111827;
     font-size: 14px;
     font-weight: 600;
 }
 
 .session a {
-    color: #1558d6;
+    color: #1d4ed8;
     overflow-wrap: anywhere;
 }
 
 .session a:not([href]) {
-    color: #80868b;
+    color: #8b95a5;
     text-decoration: none;
 }
 
@@ -205,7 +280,7 @@ h2,
 
 .sessionLabel {
     flex: 0 0 auto;
-    color: #5f6368;
+    color: #667085;
     font-size: 12px;
     font-weight: 600;
 }
@@ -213,6 +288,35 @@ h2,
 .sessionMeta,
 .empty {
     margin: 0;
-    color: #5f6368;
+    color: #667085;
     font-size: 12px;
+}
+
+@media (max-width: 640px) {
+    .settings {
+        width: min(100% - 24px, 900px);
+        margin: 24px auto;
+    }
+
+    .settingsHeader,
+    .promptTemplatesHeader,
+    .sessionsHeader {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .settingsActions,
+    .promptTemplateActions {
+        justify-content: stretch;
+    }
+
+    .settingsActions button,
+    .promptTemplateActions button {
+        flex: 1;
+    }
+
+    .sessionUrl {
+        display: grid;
+        gap: 2px;
+    }
 }

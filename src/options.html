@@ -22,6 +22,7 @@
 
     <section class="preferences">
         <label for="preferredLanguage">Preferred language</label>
+        <p class="sectionDescription">Used by prompt templates that include the preferred language macro.</p>
         <input id="preferredLanguage" type="text" autocomplete="off" />
     </section>
 
@@ -30,6 +31,11 @@
             <h2>Prompt Templates</h2>
             <button id="addPromptTemplateBtn" type="button">Add Prompt</button>
         </div>
+        <p class="sectionDescription">
+            Templates control prompts from page, link, and selection actions. Supported macros:
+            {page_title}, {page_url}, {selected_text}, {preferred_language}, {current_date}, {current_time};
+            conditional blocks: {if selected_text}...{/if}.
+        </p>
         <div id="promptTemplatesList" class="promptTemplatesList"></div>
     </section>
 
@@ -38,6 +44,7 @@
             <h2>Persisted Sessions</h2>
             <span id="sessionCount" class="sessionCount">0</span>
         </div>
+        <p class="sectionDescription">Local tab discussions kept for reopening side panels and restoring conversations.</p>
         <div id="sessionsList" class="sessionsList"></div>
     </section>
 

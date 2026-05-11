@@ -99,6 +99,7 @@ let savedCloudSyncEnabled = false;
 let isLoadingSettings = false;
 let isChangingCloudSync = false;
 let isSavingSettings = false;
+let statusClearTimer: number | undefined;
 
 if (
     !preferredLanguageInput ||
@@ -218,7 +219,7 @@ async function saveSettings(): Promise<void> {
 
     isSavingSettings = true;
     updateSaveButtonState();
-    statusEl.textContent = "Saving settings...";
+    setStatus("Saving settings...", false);
 
     try {
         await chrome.storage.local.set({
@@ -234,17 +235,17 @@ async function saveSettings(): Promise<void> {
         if (savedCloudSyncEnabled) {
             try {
                 await pushOptionsCloudSettings(nextPreferredLanguage, nextPromptTemplates);
-                statusEl.textContent = "Settings saved and queued for cloud sync.";
+                setStatus("Settings saved and queued for cloud sync.");
             } catch (error) {
                 console.error("[chatgpt-companion] cloud settings save failed", error);
-                statusEl.textContent = "Settings saved locally. Cloud sync failed.";
+                setStatus("Settings saved locally. Cloud sync failed.");
             }
         } else {
-            statusEl.textContent = "Settings saved.";
+            setStatus("Settings saved.");
         }
     } catch (error) {
         console.error("[chatgpt-companion] save settings failed", error);
-        statusEl.textContent = error instanceof Error ? error.message : "Save operation failed.";
+        setStatus(error instanceof Error ? error.message : "Save operation failed.");
     } finally {
         isSavingSettings = false;
         updateSaveButtonState();
@@ -267,7 +268,7 @@ async function enableCloudSync(): Promise<void> {
 
     isChangingCloudSync = true;
     renderCloudSyncButton();
-    statusEl.textContent = "Enabling cloud sync...";
+    setStatus("Enabling cloud sync...", false);
 
     try {
         const profileUserInfo = await chrome.identity.getProfileUserInfo();
@@ -282,9 +283,9 @@ async function enableCloudSync(): Promise<void> {
 
         if (hasOptionsCloudSettings(cloudSettings)) {
             await applyOptionsCloudSettingsToLocal(cloudSettings);
-            statusEl.textContent = `Cloud sync enabled. Remote settings loaded.${warning}`;
+            setStatus(`Cloud sync enabled. Remote settings loaded.${warning}`);
         } else {
-            statusEl.textContent = `Cloud sync enabled. Save settings to upload them.${warning}`;
+            setStatus(`Cloud sync enabled. Save settings to upload them.${warning}`);
         }
 
         savedCloudSyncEnabled = true;
@@ -292,7 +293,7 @@ async function enableCloudSync(): Promise<void> {
         await loadSettings();
     } catch (error) {
         console.error("[chatgpt-companion] enable cloud sync failed", error);
-        statusEl.textContent = error instanceof Error ? error.message : "Cloud sync enable failed.";
+        setStatus(error instanceof Error ? error.message : "Cloud sync enable failed.");
     } finally {
         isChangingCloudSync = false;
         renderCloudSyncButton();
@@ -306,17 +307,17 @@ async function disableCloudSync(): Promise<void> {
 
     isChangingCloudSync = true;
     renderCloudSyncButton();
-    statusEl.textContent = "Disabling cloud sync...";
+    setStatus("Disabling cloud sync...", false);
 
     try {
         await chrome.storage.local.set({
             cloudSyncEnabled: false
         });
         savedCloudSyncEnabled = false;
-        statusEl.textContent = "Cloud sync disabled. Local settings kept.";
+        setStatus("Cloud sync disabled. Local settings kept.");
     } catch (error) {
         console.error("[chatgpt-companion] disable cloud sync failed", error);
-        statusEl.textContent = error instanceof Error ? error.message : "Cloud sync disable failed.";
+        setStatus(error instanceof Error ? error.message : "Cloud sync disable failed.");
     } finally {
         isChangingCloudSync = false;
         renderCloudSyncButton();
@@ -330,6 +331,32 @@ function renderCloudSyncButton(): void {
 
     cloudSyncBtn.disabled = isChangingCloudSync;
     cloudSyncBtn.textContent = savedCloudSyncEnabled ? "Disable Cloud Sync" : "Enable Cloud Sync";
+    cloudSyncBtn.classList.toggle("dangerButton", savedCloudSyncEnabled);
+    cloudSyncBtn.classList.toggle("primaryButton", !savedCloudSyncEnabled);
+}
+
+function setStatus(message: string, autoClear = true): void {
+    if (!statusEl) {
+        return;
+    }
+
+    if (statusClearTimer !== undefined) {
+        window.clearTimeout(statusClearTimer);
+        statusClearTimer = undefined;
+    }
+
+    statusEl.textContent = message;
+
+    if (!autoClear || !message) {
+        return;
+    }
+
+    statusClearTimer = window.setTimeout(() => {
+        if (statusEl.textContent === message) {
+            statusEl.textContent = "";
+        }
+        statusClearTimer = undefined;
+    }, 5000);
 }
 
 async function pullOptionsCloudSettingsToLocal(): Promise<void> {
@@ -461,7 +488,7 @@ async function requestClearDataAndCache(): Promise<void> {
     }
 
     clearDataBtn.disabled = true;
-    statusEl.textContent = "Clearing data...";
+    setStatus("Clearing data...", false);
 
     try {
         const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
@@ -472,12 +499,12 @@ async function requestClearDataAndCache(): Promise<void> {
             throw new Error(response?.error || "Clear operation failed");
         }
 
-        statusEl.textContent = "Data and cache cleared.";
+        setStatus("Data and cache cleared.");
         await loadSettings();
         await renderPersistedSessions();
     } catch (error) {
         console.error("[chatgpt-companion] clear data request failed", error);
-        statusEl.textContent = error instanceof Error ? error.message : "Clear operation failed.";
+        setStatus(error instanceof Error ? error.message : "Clear operation failed.");
     } finally {
         clearDataBtn.disabled = false;
     }
