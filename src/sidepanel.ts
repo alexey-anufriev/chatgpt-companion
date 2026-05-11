@@ -9,7 +9,8 @@ const closeBtn = document.getElementById("closeBtn") as HTMLButtonElement | null
 const languageMismatchPrompt = document.getElementById("languageMismatchPrompt") as HTMLDivElement | null;
 const languageMismatchText = document.getElementById("languageMismatchText") as HTMLDivElement | null;
 const continueSessionBtn = document.getElementById("continueSessionBtn") as HTMLButtonElement | null;
-const restartSessionBtn = document.getElementById("restartSessionBtn") as HTMLButtonElement | null;
+const startNewSessionBtn = document.getElementById("startNewSessionBtn") as HTMLButtonElement | null;
+const cancelSessionBtn = document.getElementById("cancelSessionBtn") as HTMLButtonElement | null;
 const chatgptFrame = document.getElementById("chatgptFrame") as HTMLIFrameElement | null;
 const panelTabId = getPanelTabId();
 
@@ -46,7 +47,8 @@ async function init(): Promise<void> {
         !languageMismatchPrompt ||
         !languageMismatchText ||
         !continueSessionBtn ||
-        !restartSessionBtn ||
+        !startNewSessionBtn ||
+        !cancelSessionBtn ||
         !chatgptFrame
     ) {
         console.error("[chatgpt-companion] side panel DOM elements not found");
@@ -128,11 +130,15 @@ function attachEvents(): void {
     });
 
     continueSessionBtn?.addEventListener("click", () => {
-        void clearPanelLanguageMismatch();
+        void continuePanelDiscussion();
     });
 
-    restartSessionBtn?.addEventListener("click", () => {
-        void restartPanelDiscussion();
+    startNewSessionBtn?.addEventListener("click", () => {
+        void startNewPanelDiscussion();
+    });
+
+    cancelSessionBtn?.addEventListener("click", () => {
+        void clearPanelLanguageMismatch();
     });
 
     closeBtn?.addEventListener("click", async () => {
@@ -182,16 +188,34 @@ async function renderLanguageMismatchPrompt(): Promise<void> {
 
     if (!mismatch) {
         languageMismatchPrompt.classList.add("hidden");
-        languageMismatchText.textContent = "";
+        languageMismatchText.replaceChildren();
         return;
     }
 
-    const sourceText = mismatch.requestedSourceChanged ? " and a different source or selection" : "";
-    languageMismatchText.textContent =
-        `Original discussion was started with ${mismatch.currentPromptTemplateName} (${mismatch.currentLanguage}). ` +
-        `New request uses ${mismatch.requestedPromptTemplateName} (${mismatch.requestedLanguage})${sourceText}. ` +
-        "Continue with the original discussion or restart with the new request?";
+    languageMismatchText.replaceChildren(
+        createMismatchIntro(),
+        createMismatchRow("Current discussion", mismatch.currentPromptTemplateName, mismatch.currentLanguage),
+        createMismatchRow(
+            "New discussion",
+            mismatch.requestedPromptTemplateName,
+            mismatch.requestedLanguage,
+            mismatch.requestedSourceChanged ? "different source or selection" : undefined
+        )
+    );
     languageMismatchPrompt.classList.remove("hidden");
+}
+
+function createMismatchIntro(): HTMLElement {
+    const intro = document.createElement("div");
+    intro.textContent = "This tab already has a discussion. Choose how to handle the new request.";
+    return intro;
+}
+
+function createMismatchRow(label: string, templateName: string, language: string, detail?: string): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "languageMismatchRow";
+    row.textContent = `${label}: ${templateName} | ${language}${detail ? ` | ${detail}` : ""}`;
+    return row;
 }
 
 /**
@@ -209,10 +233,10 @@ async function clearPanelLanguageMismatch(): Promise<void> {
 }
 
 /**
- * Replaces the restored session with a new discussion from the selected template.
+ * Adds the new request prompt to the current restored discussion.
  */
-async function restartPanelDiscussion(): Promise<void> {
-    if (!restartSessionBtn) {
+async function continuePanelDiscussion(): Promise<void> {
+    if (!continueSessionBtn) {
         return;
     }
 
@@ -221,11 +245,11 @@ async function restartPanelDiscussion(): Promise<void> {
         return;
     }
 
-    restartSessionBtn.disabled = true;
+    continueSessionBtn.disabled = true;
 
     try {
         const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
-            type: "restart-discussion",
+            type: "continue-discussion",
             tabId: mismatch.tabId,
             requestedPromptTemplateId: mismatch.requestedPromptTemplateId,
             requestedLinkUrl: mismatch.requestedLinkUrl,
@@ -233,12 +257,46 @@ async function restartPanelDiscussion(): Promise<void> {
         });
 
         if (!response?.ok) {
-            throw new Error(response?.error || "Restart operation failed");
+            throw new Error(response?.error || "Continue operation failed");
         }
     } catch (error) {
-        console.error("[chatgpt-companion] restart discussion failed", error);
+        console.error("[chatgpt-companion] continue discussion failed", error);
     } finally {
-        restartSessionBtn.disabled = false;
+        continueSessionBtn.disabled = false;
+    }
+}
+
+/**
+ * Starts a separate discussion from the selected request.
+ */
+async function startNewPanelDiscussion(): Promise<void> {
+    if (!startNewSessionBtn) {
+        return;
+    }
+
+    const mismatch = await getPanelLanguageMismatch();
+    if (!mismatch) {
+        return;
+    }
+
+    startNewSessionBtn.disabled = true;
+
+    try {
+        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+            type: "start-new-discussion",
+            tabId: mismatch.tabId,
+            requestedPromptTemplateId: mismatch.requestedPromptTemplateId,
+            requestedLinkUrl: mismatch.requestedLinkUrl,
+            selectionText: mismatch.selectionText
+        });
+
+        if (!response?.ok) {
+            throw new Error(response?.error || "Start new operation failed");
+        }
+    } catch (error) {
+        console.error("[chatgpt-companion] start new discussion failed", error);
+    } finally {
+        startNewSessionBtn.disabled = false;
     }
 }
 

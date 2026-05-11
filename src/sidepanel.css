@@ -84,8 +84,17 @@ button:hover {
 }
 
 .languageMismatchText {
+    display: grid;
+    gap: 6px;
     color: #f3e5b5;
     line-height: 1.35;
+}
+
+.languageMismatchRow {
+    border: 1px solid #5a4a25;
+    border-radius: 6px;
+    background: #211b10;
+    padding: 6px 8px;
 }
 
 .languageMismatchActions {

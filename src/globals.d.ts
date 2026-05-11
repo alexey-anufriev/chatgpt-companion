@@ -100,15 +100,27 @@ type RuntimeMessage =
         type: "clear-data-and-cache";
     }
     | {
-        /** replace the current tab discussion with selected prompt settings */
-        type: "restart-discussion";
-        /** source tab id whose discussion should restart */
+        /** add selected prompt settings as a continuation in the current chat */
+        type: "continue-discussion";
+        /** source tab id whose discussion should continue */
         tabId: number;
-        /** prompt template id for the restarted discussion */
+        /** prompt template id for the continuation */
         requestedPromptTemplateId: string;
-        /** linked page URL to use when restarting a linked discussion */
+        /** linked page URL to use when continuing from a linked discussion */
         requestedLinkUrl?: string;
-        /** source text to pass into the regenerated prompt */
+        /** source text to pass into the continuation prompt */
+        selectionText: string;
+    }
+    | {
+        /** replace the current tab discussion with a separate new chat */
+        type: "start-new-discussion";
+        /** source tab id whose discussion should be replaced */
+        tabId: number;
+        /** prompt template id for the new discussion */
+        requestedPromptTemplateId: string;
+        /** linked page URL to use when starting from a linked discussion */
+        requestedLinkUrl?: string;
+        /** source text to pass into the new prompt */
         selectionText: string;
     };
 

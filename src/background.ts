@@ -185,10 +185,16 @@ chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefin
                 .catch((error) => sendErrorResponse("clearDataAndCache failed", error, sendResponse));
             return true;
 
-        case "restart-discussion":
-            void restartDiscussion(message)
+        case "continue-discussion":
+            void continueDiscussion(message)
                 .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
-                .catch((error) => sendErrorResponse("restartDiscussion failed", error, sendResponse));
+                .catch((error) => sendErrorResponse("continueDiscussion failed", error, sendResponse));
+            return true;
+
+        case "start-new-discussion":
+            void startNewDiscussion(message)
+                .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("startNewDiscussion failed", error, sendResponse));
             return true;
 
         default:
@@ -594,25 +600,51 @@ async function handleExistingDiscussionLanguage(
 }
 
 /**
- * Restarts a tab discussion from the side panel settings mismatch prompt.
+ * Adds the requested prompt to the existing tab discussion without replacing it.
  */
-async function restartDiscussion(message: Partial<RuntimeMessage>): Promise<void> {
-    if (message.type !== "restart-discussion" || typeof message.tabId !== "number") {
-        throw new Error("Restart request is missing tab id");
+async function continueDiscussion(message: Partial<RuntimeMessage>): Promise<void> {
+    if (message.type !== "continue-discussion" || typeof message.tabId !== "number") {
+        throw new Error("Continue request is missing tab id");
     }
 
     if (typeof message.requestedPromptTemplateId !== "string") {
-        throw new Error("Restart request is missing prompt template");
+        throw new Error("Continue request is missing prompt template");
     }
 
     const tab = await chrome.tabs.get(message.tabId);
     const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
-    const restarted = message.requestedLinkUrl ?
+    const source = message.requestedLinkUrl ?
+        await collectLinkSourceFromTab(tab, message.requestedLinkUrl, message.selectionText ?? "") :
+        await collectPageSourceFromTab(tab, message.selectionText ?? "");
+
+    if (!source || !tab.id) {
+        throw new Error("Continue operation failed");
+    }
+
+    await updateDiscussionPrompt(tab.id, source, promptTemplate);
+    await clearPendingLanguageMismatch(message.tabId);
+}
+
+/**
+ * Replaces the current tab discussion with a separate new chat.
+ */
+async function startNewDiscussion(message: Partial<RuntimeMessage>): Promise<void> {
+    if (message.type !== "start-new-discussion" || typeof message.tabId !== "number") {
+        throw new Error("Start new request is missing tab id");
+    }
+
+    if (typeof message.requestedPromptTemplateId !== "string") {
+        throw new Error("Start new request is missing prompt template");
+    }
+
+    const tab = await chrome.tabs.get(message.tabId);
+    const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
+    const started = message.requestedLinkUrl ?
         await createDiscussionFromLink(tab, message.requestedLinkUrl, message.selectionText ?? "", promptTemplate) :
         await createDiscussionFromTab(tab, message.selectionText ?? "", promptTemplate);
 
-    if (!restarted) {
-        throw new Error("Restart operation failed");
+    if (!started) {
+        throw new Error("Start new operation failed");
     }
 
     await clearPendingLanguageMismatch(message.tabId);
@@ -663,14 +695,7 @@ async function createDiscussionFromTab(
     }
 
     try {
-        // executeScript runs collectPageData in the page, not in this service worker
-        const injectionResults = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: collectPageData,
-            args: [selectionText]
-        });
-
-        const result = injectionResults[0]?.result;
+        const result = await collectPageSourceFromTab(tab, selectionText);
         if (!result) {
             return false;
         }
@@ -696,13 +721,7 @@ async function createDiscussionFromLink(
     }
 
     try {
-        const injectionResults = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: collectLinkData,
-            args: [linkUrl, selectionText]
-        });
-
-        const result = injectionResults[0]?.result;
+        const result = await collectLinkSourceFromTab(tab, linkUrl, selectionText);
         if (!result) {
             return false;
         }
@@ -712,6 +731,45 @@ async function createDiscussionFromLink(
         console.error("[chatgpt-companion] createDiscussionFromLink failed", error);
         return false;
     }
+}
+
+/**
+ * Collects current page source metadata from a tab.
+ */
+async function collectPageSourceFromTab(tab: chrome.tabs.Tab, selectionText: string): Promise<DiscussSource | null> {
+    if (!tab.id) {
+        return null;
+    }
+
+    // executeScript runs collectPageData in the page, not in this service worker
+    const injectionResults = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: collectPageData,
+        args: [selectionText]
+    });
+
+    return injectionResults[0]?.result ?? null;
+}
+
+/**
+ * Collects linked page source metadata from a tab.
+ */
+async function collectLinkSourceFromTab(
+    tab: chrome.tabs.Tab,
+    linkUrl: string,
+    selectionText: string
+): Promise<DiscussSource | null> {
+    if (!tab.id) {
+        return null;
+    }
+
+    const injectionResults = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: collectLinkData,
+        args: [linkUrl, selectionText]
+    });
+
+    return injectionResults[0]?.result ?? null;
 }
 
 /**
@@ -758,6 +816,42 @@ async function createDiscussionFromSource(
 
     console.log("[chatgpt-companion] prompt saved", { sessionId, tabId });
     return true;
+}
+
+/**
+ * Replaces the prompt in an existing session so it continues the same chat.
+ */
+async function updateDiscussionPrompt(
+    tabId: number,
+    source: DiscussSource,
+    promptTemplate: PromptTemplate
+): Promise<void> {
+    const preferredLanguage = await getPreferredLanguage();
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds"
+    ])) as StorageShape;
+    const sessionId = storage.tabSessionIds?.[String(tabId)];
+
+    if (!sessionId || !storage.discussions?.[sessionId]) {
+        throw new Error("Existing discussion not found");
+    }
+
+    await chrome.storage.local.set({
+        discussions: {
+            ...storage.discussions,
+            [sessionId]: {
+                ...storage.discussions[sessionId],
+                prompt: buildPrompt(source, promptTemplate, preferredLanguage),
+                stamp: Date.now(),
+                source,
+                consumed: false,
+                responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
+                promptTemplateName: promptTemplate.name
+            }
+        },
+        closeDiscussionSessionId: undefined
+    });
 }
 
 /**
