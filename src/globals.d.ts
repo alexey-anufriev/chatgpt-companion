@@ -25,9 +25,9 @@ type DiscussionState = {
     /** ChatGPT conversation URL captured after ChatGPT creates a thread */
     chatUrl?: string;
     /** response language requested when this discussion was created */
-    responseLanguage?: string;
+    responseLanguage: string;
     /** prompt template name used when this discussion was created */
-    promptTemplateName?: string;
+    promptTemplateName: string;
 };
 
 /**
@@ -52,7 +52,7 @@ type PendingLanguageMismatch = {
     /** language stored on the restored session */
     currentLanguage: string;
     /** prompt template stored on the restored session */
-    currentPromptTemplateName?: string;
+    currentPromptTemplateName: string;
     /** response language implied by the selected prompt template */
     requestedLanguage: string;
     /** prompt template selected from the context menu */

@@ -1,11 +1,10 @@
 const OPTIONS_DEFAULT_PREFERRED_LANGUAGE = "English";
-const OPTIONS_ORIGINAL_LANGUAGE_LABEL = "Original language";
 const OPTIONS_DEFAULT_PROMPT_TEMPLATE = [
     "Hi, I’d like to discuss the following content.",
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Selected excerpt:",
     "{selected_text}",
     "{/if}",
@@ -22,7 +21,7 @@ const OPTIONS_DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Selected excerpt:",
     "{selected_text}",
     "{/if}",
@@ -39,7 +38,7 @@ const OPTIONS_SHORT_SUMMARY_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Material:",
     "{selected_text}",
     "{/if}",
@@ -52,7 +51,7 @@ const OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Material:",
     "{selected_text}",
     "{/if}",
@@ -65,18 +64,13 @@ const OPTIONS_NEW_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "And in particular selected excerpt:",
     "{selected_text}",
     "{/if}",
     "",
     "Use {preferred_language} for your response."
 ].join("\n");
-const OPTIONS_PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
-    "default",
-    "default-translated",
-    "short-summary"
-]);
 const OPTIONS_SYNC_SETTING_KEYS: (keyof StorageShape)[] = [
     "cloudSyncEnabled",
     "preferredLanguage",
@@ -94,7 +88,7 @@ const sessionsListEl = document.getElementById("sessionsList") as HTMLDivElement
 const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElement | null;
 
 let savedPreferredLanguage = OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
-let savedPromptTemplates: PromptTemplate[] = [getOptionsDefaultPromptTemplate()];
+let savedPromptTemplates: PromptTemplate[] = getOptionsDefaultPromptTemplates();
 let savedCloudSyncEnabled = false;
 let isLoadingSettings = false;
 let isChangingCloudSync = false;
@@ -465,9 +459,7 @@ function readPromptTemplateEditors(): PromptTemplate[] {
     const promptTemplates = Array.from(promptTemplatesListEl.querySelectorAll<HTMLElement>(".promptTemplate"))
         .map((row) => {
             const name = row.querySelector<HTMLInputElement>(".promptTemplateName")?.value.trim() || "Prompt";
-            const template = sanitizeOptionsPromptTemplate(
-                row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value ?? ""
-            ) ||
+            const template = (row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value ?? "").trim() ||
                 OPTIONS_DEFAULT_PROMPT_TEMPLATE;
 
             return {
@@ -477,9 +469,7 @@ function readPromptTemplateEditors(): PromptTemplate[] {
             };
         });
 
-    return promptTemplates.length > 0 ?
-        appendMissingOptionsTranslatedSummaryTemplate(promptTemplates) :
-        getOptionsDefaultPromptTemplates();
+    return promptTemplates.length > 0 ? promptTemplates : getOptionsDefaultPromptTemplates();
 }
 
 async function requestClearDataAndCache(): Promise<void> {
@@ -588,8 +578,8 @@ function createSessionRow(
     meta.className = "sessionMeta";
     meta.textContent = [
         `session: ${sessionId}`,
-        `language: ${discussion.responseLanguage || OPTIONS_ORIGINAL_LANGUAGE_LABEL}`,
-        `prompt: ${discussion.promptTemplateName || "Default"}`,
+        `language: ${discussion.responseLanguage}`,
+        `prompt: ${discussion.promptTemplateName}`,
         `updated: ${new Date(discussion.stamp).toLocaleString()}`,
         `consumed: ${discussion.consumed ? "yes" : "no"}`,
         `tab: ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
@@ -627,14 +617,10 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
         .map((promptTemplate) => ({
             id: promptTemplate.id,
             name: promptTemplate.name.trim() || "Prompt",
-            template: sanitizeOptionsPromptTemplate(promptTemplate.template) || OPTIONS_DEFAULT_PROMPT_TEMPLATE
+            template: promptTemplate.template.trim() || OPTIONS_DEFAULT_PROMPT_TEMPLATE
         }));
 
     return promptTemplates.length > 0 ? promptTemplates : getOptionsDefaultPromptTemplates();
-}
-
-function getOptionsDefaultPromptTemplate(): PromptTemplate {
-    return getOptionsDefaultPromptTemplates()[0];
 }
 
 function getOptionsDefaultPromptTemplates(): PromptTemplate[] {
@@ -660,51 +646,6 @@ function getOptionsDefaultPromptTemplates(): PromptTemplate[] {
             template: OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
         }
     ];
-}
-
-function appendMissingOptionsTranslatedSummaryTemplate(promptTemplates: PromptTemplate[]): PromptTemplate[] {
-    const hasOlderBuiltInTemplate = promptTemplates.some((promptTemplate) => {
-        return OPTIONS_PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY.has(promptTemplate.id);
-    });
-    const hasTranslatedSummaryTemplate = promptTemplates.some((promptTemplate) => {
-        return promptTemplate.id === "short-summary-translated";
-    });
-
-    if (!hasOlderBuiltInTemplate || hasTranslatedSummaryTemplate) {
-        return promptTemplates;
-    }
-
-    return [
-        ...promptTemplates,
-        {
-            id: "short-summary-translated",
-            name: "Short summary translated",
-            template: OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
-        }
-    ];
-}
-
-function sanitizeOptionsPromptTemplate(template: string): string {
-    return addSelectionConditionalsToLegacyOptionsTemplate(template)
-        .replace(/\{response_language_instruction}/g, "")
-        .replace(/\{response_language}/g, "")
-        .trim();
-}
-
-function addSelectionConditionalsToLegacyOptionsTemplate(template: string): string {
-    if (template.includes("{if selected_text}")) {
-        return template;
-    }
-
-    return template
-        .replace(
-            "Selected excerpt:\n{selected_text}",
-            "{if selected_text}\nSelected excerpt:\n{selected_text}\n{/if}"
-        )
-        .replace(
-            "Material:\n{selected_text}",
-            "{if selected_text}\nMaterial:\n{selected_text}\n{/if}"
-        );
 }
 
 function updateSaveButtonState(): void {

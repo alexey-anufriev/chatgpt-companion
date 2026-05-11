@@ -13,7 +13,7 @@ const DEFAULT_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Selected excerpt:",
     "{selected_text}",
     "{/if}",
@@ -32,7 +32,7 @@ const DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Selected excerpt:",
     "{selected_text}",
     "{/if}",
@@ -51,7 +51,7 @@ const SHORT_SUMMARY_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Material:",
     "{selected_text}",
     "{/if}",
@@ -66,7 +66,7 @@ const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "Title: {page_title}",
     "URL: {page_url}",
     "",
-    "{if selected_text}",
+    "{if {selected_text}}",
     "Material:",
     "{selected_text}",
     "{/if}",
@@ -74,11 +74,6 @@ const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "Do not analyze or critique it.",
     "Use {preferred_language} for your response."
 ].join("\n");
-const PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY = new Set([
-    DEFAULT_PROMPT_TEMPLATE_ID,
-    DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID,
-    SHORT_SUMMARY_PROMPT_TEMPLATE_ID
-]);
 const SYNC_SETTING_KEYS: (keyof StorageShape)[] = [
     "cloudSyncEnabled",
     "preferredLanguage",
@@ -569,8 +564,8 @@ async function handleExistingDiscussionLanguage(
     requestedLanguage: string,
     requestedLinkUrl?: string
 ): Promise<void> {
-    const currentLanguage = discussion.responseLanguage ?? ORIGINAL_LANGUAGE_LABEL;
-    const currentPromptTemplateName = discussion.promptTemplateName ?? DEFAULT_PROMPT_TEMPLATE_NAME;
+    const currentLanguage = discussion.responseLanguage;
+    const currentPromptTemplateName = discussion.promptTemplateName;
 
     if (requestedLanguage === currentLanguage && promptTemplate.name === currentPromptTemplateName) {
         await clearPendingLanguageMismatch(tabId);
@@ -833,7 +828,7 @@ function buildPrompt(
  * Removes conditional template blocks when their macro value is absent.
  */
 function applyPromptConditionals(template: string, macros: Record<string, string>): string {
-    return template.replace(/\{if\s+([a-z0-9_]+)}\n?([\s\S]*?)\n?\{\/if}/g, (_match, name: string, content: string) => {
+    return template.replace(/\{if\s+\{([a-z0-9_]+)}}\n?([\s\S]*?)\n?\{\/if}/g, (_match, name: string, content: string) => {
         return macros[name]?.trim() ? content : "";
     });
 }
@@ -921,10 +916,10 @@ function normalizePromptTemplates(value: unknown): PromptTemplate[] {
         .map((template) => ({
             id: template.id.trim() || crypto.randomUUID(),
             name: template.name.trim() || DEFAULT_PROMPT_TEMPLATE_NAME,
-            template: sanitizePromptTemplate(template.template) || DEFAULT_PROMPT_TEMPLATE
+            template: template.template.trim() || DEFAULT_PROMPT_TEMPLATE
         }));
 
-    return promptTemplates.length > 0 ? appendMissingTranslatedSummaryTemplate(promptTemplates) : getDefaultPromptTemplates();
+    return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
 }
 
 /**
@@ -953,60 +948,6 @@ function getDefaultPromptTemplates(): PromptTemplate[] {
             template: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
         }
     ];
-}
-
-/**
- * Adds the new translated summary template to older built-in template lists.
- */
-function appendMissingTranslatedSummaryTemplate(promptTemplates: PromptTemplate[]): PromptTemplate[] {
-    const hasOlderBuiltInTemplate = promptTemplates.some((promptTemplate) => {
-        return PROMPT_TEMPLATE_IDS_BEFORE_TRANSLATED_SUMMARY.has(promptTemplate.id);
-    });
-    const hasTranslatedSummaryTemplate = promptTemplates.some((promptTemplate) => {
-        return promptTemplate.id === SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID;
-    });
-
-    if (!hasOlderBuiltInTemplate || hasTranslatedSummaryTemplate) {
-        return promptTemplates;
-    }
-
-    return [
-        ...promptTemplates,
-        {
-            id: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID,
-            name: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_NAME,
-            template: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
-        }
-    ];
-}
-
-/**
- * Removes legacy unsupported macros from stored prompt template text.
- */
-function sanitizePromptTemplate(template: string): string {
-    return addSelectionConditionalsToLegacyTemplate(template)
-        .replace(/\{response_language_instruction}/g, "")
-        .replace(/\{response_language}/g, "")
-        .trim();
-}
-
-/**
- * Wraps older built-in selection blocks so page-only prompts stay clean.
- */
-function addSelectionConditionalsToLegacyTemplate(template: string): string {
-    if (template.includes("{if selected_text}")) {
-        return template;
-    }
-
-    return template
-        .replace(
-            "Selected excerpt:\n{selected_text}",
-            "{if selected_text}\nSelected excerpt:\n{selected_text}\n{/if}"
-        )
-        .replace(
-            "Material:\n{selected_text}",
-            "{if selected_text}\nMaterial:\n{selected_text}\n{/if}"
-        );
 }
 
 /**

@@ -186,11 +186,9 @@ async function renderLanguageMismatchPrompt(): Promise<void> {
         return;
     }
 
-    const currentPromptTemplateName = mismatch.currentPromptTemplateName ?? "Default";
-
     languageMismatchText.textContent =
         "Original discussion was started with " +
-        `${currentPromptTemplateName} (${mismatch.currentLanguage}), but you selected ` +
+        `${mismatch.currentPromptTemplateName} (${mismatch.currentLanguage}), but you selected ` +
         `${mismatch.requestedPromptTemplateName} (${mismatch.requestedLanguage}). ` +
         "Continue with the original discussion or restart with the selected template?";
     languageMismatchPrompt.classList.remove("hidden");
