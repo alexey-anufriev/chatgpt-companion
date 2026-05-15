@@ -1,84 +1,33 @@
+import {
+    DEFAULT_PROMPT_TEMPLATE,
+    getDefaultPromptTemplates
+} from "./prompts.js";
+import {
+    DEFAULT_PREFERRED_LANGUAGE,
+    SYNC_SETTING_KEYS
+} from "./settings.js";
+import type {
+    PromptTemplate,
+    State
+} from "./settings.js";
+import type {
+    RuntimeMessage,
+    RuntimeResponse
+} from "./events.js";
+import type {
+    DiscussionMismatch,
+    DiscussionSource,
+    DiscussionState
+} from "./context.js";
+
 /**
  * Context menu identifiers used to distinguish this extension's menu actions
  * from any other Chrome context menu events.
  */
 const MENU_PARENT_ID = "discuss-in-chatgpt";
 const MENU_TEMPLATE_PREFIX = "discuss-in-chatgpt-template-";
-const DEFAULT_PREFERRED_LANGUAGE = "English";
-const ORIGINAL_LANGUAGE_LABEL = "Original language";
 const DEFAULT_PROMPT_TEMPLATE_NAME = "Default";
-const DEFAULT_PROMPT_TEMPLATE_ID = "default";
-const DEFAULT_PROMPT_TEMPLATE = [
-    "Hi, I’d like to discuss the following content.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Selected excerpt:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Please:",
-    "- Provide a concise summary",
-    "- Identify the main idea",
-    "- Highlight what is actually important",
-    "- Point out weak or questionable parts",
-    "Use the language of the original material for your response."
-].join("\n");
-const DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID = "default-translated";
-const DEFAULT_TRANSLATED_PROMPT_TEMPLATE_NAME = "Default translated";
-const DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
-    "Hi, I’d like to discuss the following content.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Selected excerpt:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Please:",
-    "- Provide a concise summary",
-    "- Identify the main idea",
-    "- Highlight what is actually important",
-    "- Point out weak or questionable parts",
-    "Use {preferred_language} for your response."
-].join("\n");
-const SHORT_SUMMARY_PROMPT_TEMPLATE_ID = "short-summary";
-const SHORT_SUMMARY_PROMPT_TEMPLATE_NAME = "Short summary";
-const SHORT_SUMMARY_PROMPT_TEMPLATE = [
-    "Compact the following material into a short summary.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Material:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Do not analyze or critique it.",
-    "Use the language of the original material for your response."
-].join("\n");
-const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID = "short-summary-translated";
-const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_NAME = "Short summary translated";
-const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
-    "Compact the following material into a short summary.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Material:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Do not analyze or critique it.",
-    "Use {preferred_language} for your response."
-].join("\n");
-const SYNC_SETTING_KEYS: (keyof StorageShape)[] = [
-    "cloudSyncEnabled",
-    "preferredLanguage",
-    "promptTemplates"
-];
+const ORIGINAL_LANGUAGE_LABEL = "Original language";
 
 /**
  * Registers the context menu after install and enables side panel support for
@@ -122,7 +71,7 @@ chrome.tabs.onUpdated.addListener((tabId, _changeInfo, tab) => {
  */
 chrome.tabs.onRemoved.addListener((tabId) => {
     void detachDiscussionFromTab(tabId);
-    void clearPendingLanguageMismatch(tabId);
+    void clearDiscussionMismatch(tabId);
 });
 
 /**
@@ -203,6 +152,16 @@ chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefin
 });
 
 /**
+ * Returns every current concrete tab id.
+ */
+async function getOpenTabIds(): Promise<number[]> {
+    const tabs = await chrome.tabs.query({});
+    return tabs
+        .map((tab) => tab.id)
+        .filter((tabId): tabId is number => typeof tabId === "number");
+}
+
+/**
  * Enables the extension side panel for every currently open tab.
  *
  * Chrome does not automatically apply side panel options to tabs that already
@@ -211,13 +170,10 @@ chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefin
  */
 async function ensurePanelConfiguredForAllTabs(): Promise<void> {
     try {
-        const tabs = await chrome.tabs.query({});
+        const tabIds = await getOpenTabIds();
 
-        // filter first so Promise.all only receives concrete tab ids
         await Promise.all(
-            tabs
-                .filter((tab) => typeof tab.id === "number")
-                .map((tab) => ensurePanelConfiguredForTab(tab.id!))
+            tabIds.map((tabId) => ensurePanelConfiguredForTab(tabId))
         );
     } catch (error) {
         console.error("[chatgpt-companion] ensurePanelConfiguredForAllTabs failed", error);
@@ -241,13 +197,13 @@ async function initializeSettingsAndMenus(): Promise<void> {
  * Copies cloud settings into local storage when cloud sync is enabled.
  */
 async function pullCloudSettingsToLocal(): Promise<boolean> {
-    const localSettings = (await chrome.storage.local.get("cloudSyncEnabled")) as StorageShape;
+    const localSettings = (await chrome.storage.local.get("cloudSyncEnabled")) as State;
 
     if (!localSettings.cloudSyncEnabled) {
         return false;
     }
 
-    const cloudSettings = (await chrome.storage.sync.get(SYNC_SETTING_KEYS)) as StorageShape;
+    const cloudSettings = (await chrome.storage.sync.get(SYNC_SETTING_KEYS)) as State;
 
     if (!cloudSettings.cloudSyncEnabled && !hasCloudSettings(cloudSettings)) {
         return false;
@@ -264,7 +220,7 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
 /**
  * Returns whether cloud storage contains extension settings to pull.
  */
-function hasCloudSettings(cloudSettings: StorageShape): boolean {
+function hasCloudSettings(cloudSettings: State): boolean {
     return typeof cloudSettings.preferredLanguage === "string" || Array.isArray(cloudSettings.promptTemplates);
 }
 
@@ -339,7 +295,7 @@ async function restoreDiscussionMappingsForOpenTabs(): Promise<void> {
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const discussions = storage.discussions ?? {};
     const discussionEntries = Object.entries(discussions);
 
@@ -397,7 +353,7 @@ async function restoreDiscussionMappingForTab(tabId: number, tabUrl?: string): P
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
 
     if (storage.tabSessionIds?.[String(tabId)]) {
         return;
@@ -488,7 +444,7 @@ async function handleContextMenuClick(
         return;
     }
 
-    await clearPendingLanguageMismatch(tab.id);
+    await clearDiscussionMismatch(tab.id);
     if (info.linkUrl) {
         await createDiscussionFromLink(tab, info.linkUrl, selectionText, promptTemplate);
         return;
@@ -504,7 +460,7 @@ async function getDiscussionForTab(tabId: number): Promise<DiscussionState | nul
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const sessionId = storage.tabSessionIds?.[String(tabId)];
 
     return sessionId ? storage.discussions?.[sessionId] ?? null : null;
@@ -519,19 +475,15 @@ async function clearDataAndCache(): Promise<void> {
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
-    const tabs = await chrome.tabs.query({});
+    const tabIds = await getOpenTabIds();
     await Promise.all(
-        tabs
-            .filter((tab) => typeof tab.id === "number")
-            .map((tab) => {
-                return chrome.sidePanel.close({ tabId: tab.id! }).catch(() => undefined);
-            })
+        tabIds.map((tabId) => chrome.sidePanel.close({ tabId }).catch(() => undefined))
     );
 
     await chrome.storage.local.remove([
         "discussions",
         "tabSessionIds",
-        "pendingLanguageMismatches",
+        "discussionMismatches",
         "closeDiscussionSessionId",
         "clearAllDiscussionDraftsStamp"
     ]);
@@ -574,18 +526,22 @@ async function handleExistingDiscussionLanguage(
     requestedSourceChanged: boolean
 ): Promise<void> {
     const currentLanguage = discussion.responseLanguage;
+    const currentPromptTemplateId = discussion.promptTemplateId;
     const currentPromptTemplateName = discussion.promptTemplateName;
+    const isSamePromptTemplate = currentPromptTemplateId
+        ? promptTemplate.id === currentPromptTemplateId
+        : promptTemplate.name === currentPromptTemplateName;
 
     if (
         requestedLanguage === currentLanguage &&
-        promptTemplate.name === currentPromptTemplateName &&
+        isSamePromptTemplate &&
         !requestedSourceChanged
     ) {
-        await clearPendingLanguageMismatch(tabId);
+        await clearDiscussionMismatch(tabId);
         return;
     }
 
-    await setPendingLanguageMismatch({
+    await setDiscussionMismatch({
         tabId,
         currentLanguage,
         currentPromptTemplateName,
@@ -594,8 +550,7 @@ async function handleExistingDiscussionLanguage(
         requestedPromptTemplateName: promptTemplate.name,
         requestedLinkUrl,
         requestedSourceChanged,
-        selectionText,
-        stamp: Date.now()
+        selectionText
     });
 }
 
@@ -622,7 +577,7 @@ async function continueDiscussion(message: Partial<RuntimeMessage>): Promise<voi
     }
 
     await updateContinuationPrompt(tab.id, source, promptTemplate);
-    await clearPendingLanguageMismatch(message.tabId);
+    await clearDiscussionMismatch(message.tabId);
 }
 
 /**
@@ -647,38 +602,38 @@ async function startNewDiscussion(message: Partial<RuntimeMessage>): Promise<voi
         throw new Error("Start new operation failed");
     }
 
-    await clearPendingLanguageMismatch(message.tabId);
+    await clearDiscussionMismatch(message.tabId);
 }
 
 /**
- * Stores a tab-scoped settings mismatch prompt for the side panel.
+ * Stores a tab-scoped discussion mismatch prompt for the side panel.
  */
-async function setPendingLanguageMismatch(mismatch: PendingLanguageMismatch): Promise<void> {
-    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+async function setDiscussionMismatch(mismatch: DiscussionMismatch): Promise<void> {
+    const storage = (await chrome.storage.local.get("discussionMismatches")) as State;
 
     await chrome.storage.local.set({
-        pendingLanguageMismatches: {
-            ...(storage.pendingLanguageMismatches ?? {}),
+        discussionMismatches: {
+            ...(storage.discussionMismatches ?? {}),
             [String(mismatch.tabId)]: mismatch
         }
     });
 }
 
 /**
- * Clears a tab-scoped settings mismatch prompt.
+ * Clears a tab-scoped discussion mismatch prompt.
  */
-async function clearPendingLanguageMismatch(tabId: number): Promise<void> {
-    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+async function clearDiscussionMismatch(tabId: number): Promise<void> {
+    const storage = (await chrome.storage.local.get("discussionMismatches")) as State;
     const tabKey = String(tabId);
 
-    if (!storage.pendingLanguageMismatches?.[tabKey]) {
+    if (!storage.discussionMismatches?.[tabKey]) {
         return;
     }
 
-    const pendingLanguageMismatches = { ...(storage.pendingLanguageMismatches ?? {}) };
-    delete pendingLanguageMismatches[tabKey];
+    const discussionMismatches = { ...(storage.discussionMismatches ?? {}) };
+    delete discussionMismatches[tabKey];
 
-    await chrome.storage.local.set({ pendingLanguageMismatches });
+    await chrome.storage.local.set({ discussionMismatches });
 }
 
 /**
@@ -736,7 +691,7 @@ async function createDiscussionFromLink(
 /**
  * Collects current page source metadata from a tab.
  */
-async function collectPageSourceFromTab(tab: chrome.tabs.Tab, selectionText: string): Promise<DiscussSource | null> {
+async function collectPageSourceFromTab(tab: chrome.tabs.Tab, selectionText: string): Promise<DiscussionSource | null> {
     if (!tab.id) {
         return null;
     }
@@ -758,7 +713,7 @@ async function collectLinkSourceFromTab(
     tab: chrome.tabs.Tab,
     linkUrl: string,
     selectionText: string
-): Promise<DiscussSource | null> {
+): Promise<DiscussionSource | null> {
     if (!tab.id) {
         return null;
     }
@@ -777,7 +732,7 @@ async function collectLinkSourceFromTab(
  */
 async function createDiscussionFromSource(
     tabId: number,
-    source: DiscussSource,
+    source: DiscussionSource,
     promptTemplate: PromptTemplate
 ): Promise<boolean> {
     const preferredLanguage = await getPreferredLanguage();
@@ -786,7 +741,7 @@ async function createDiscussionFromSource(
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const previousSessionId = storage.tabSessionIds?.[String(tabId)];
     const discussions = { ...(storage.discussions ?? {}) };
     const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
@@ -802,6 +757,7 @@ async function createDiscussionFromSource(
         source,
         consumed: false,
         responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
+        promptTemplateId: promptTemplate.id,
         promptTemplateName: promptTemplate.name
     };
     tabSessionIds[String(tabId)] = sessionId;
@@ -823,14 +779,14 @@ async function createDiscussionFromSource(
  */
 async function updateContinuationPrompt(
     tabId: number,
-    source: DiscussSource,
+    source: DiscussionSource,
     promptTemplate: PromptTemplate
 ): Promise<void> {
     const preferredLanguage = await getPreferredLanguage();
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const sessionId = storage.tabSessionIds?.[String(tabId)];
 
     if (!sessionId || !storage.discussions?.[sessionId]) {
@@ -855,7 +811,7 @@ async function updateContinuationPrompt(
  * Removes the tab-to-session mapping while preserving the discussion for restore.
  */
 async function detachDiscussionFromTab(tabId: number): Promise<void> {
-    const storage = (await chrome.storage.local.get("tabSessionIds")) as StorageShape;
+    const storage = (await chrome.storage.local.get("tabSessionIds")) as State;
     const tabKey = String(tabId);
 
     if (!storage.tabSessionIds?.[tabKey]) {
@@ -872,7 +828,7 @@ async function detachDiscussionFromTab(tabId: number): Promise<void> {
  * Runs in the page context and returns the minimal source metadata used to
  * create a discussion prompt.
  */
-function collectPageData(selectionText: string): DiscussSource {
+function collectPageData(selectionText: string): DiscussionSource {
     return {
         title: document.title || "",
         url: location.href || "",
@@ -883,7 +839,7 @@ function collectPageData(selectionText: string): DiscussSource {
 /**
  * Runs in the page context and returns source metadata for a clicked link.
  */
-function collectLinkData(linkUrl: string, selectionText: string): DiscussSource {
+function collectLinkData(linkUrl: string, selectionText: string): DiscussionSource {
     const link = Array.from(document.links).find((item) => item.href === linkUrl);
     let fallbackTitle = linkUrl;
 
@@ -909,7 +865,7 @@ function collectLinkData(linkUrl: string, selectionText: string): DiscussSource 
  * Builds the prompt inserted into ChatGPT from a user-editable template.
  */
 function buildPrompt(
-    data: DiscussSource,
+    data: DiscussionSource,
     promptTemplate: PromptTemplate,
     preferredLanguage: string
 ): string {
@@ -936,7 +892,7 @@ function applyPromptConditionals(template: string, macros: Record<string, string
  * Builds supported prompt template macro values from source and settings.
  */
 function getPromptMacros(
-    data: DiscussSource,
+    data: DiscussionSource,
     preferredLanguage: string
 ): Record<string, string> {
     const now = new Date();
@@ -967,7 +923,7 @@ function applyPromptMacros(
  * Returns the currently configured preferred response language.
  */
 async function getPreferredLanguage(): Promise<string> {
-    const storage = (await chrome.storage.local.get("preferredLanguage")) as StorageShape;
+    const storage = (await chrome.storage.local.get("preferredLanguage")) as State;
     return normalizePreferredLanguage(storage.preferredLanguage);
 }
 
@@ -975,7 +931,7 @@ async function getPreferredLanguage(): Promise<string> {
  * Returns stored prompt templates or the hardcoded default fallback.
  */
 async function getPromptTemplates(): Promise<PromptTemplate[]> {
-    const storage = (await chrome.storage.local.get("promptTemplates")) as StorageShape;
+    const storage = (await chrome.storage.local.get("promptTemplates")) as State;
     return normalizePromptTemplates(storage.promptTemplates);
 }
 
@@ -1019,34 +975,6 @@ function normalizePromptTemplates(value: unknown): PromptTemplate[] {
         }));
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
-}
-
-/**
- * Returns hardcoded prompt templates used before settings exist.
- */
-function getDefaultPromptTemplates(): PromptTemplate[] {
-    return [
-        {
-            id: DEFAULT_PROMPT_TEMPLATE_ID,
-            name: DEFAULT_PROMPT_TEMPLATE_NAME,
-            template: DEFAULT_PROMPT_TEMPLATE
-        },
-        {
-            id: DEFAULT_TRANSLATED_PROMPT_TEMPLATE_ID,
-            name: DEFAULT_TRANSLATED_PROMPT_TEMPLATE_NAME,
-            template: DEFAULT_TRANSLATED_PROMPT_TEMPLATE
-        },
-        {
-            id: SHORT_SUMMARY_PROMPT_TEMPLATE_ID,
-            name: SHORT_SUMMARY_PROMPT_TEMPLATE_NAME,
-            template: SHORT_SUMMARY_PROMPT_TEMPLATE
-        },
-        {
-            id: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_ID,
-            name: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE_NAME,
-            template: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
-        }
-    ];
 }
 
 /**

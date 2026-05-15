@@ -1,5 +1,5 @@
 import { cpSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,5 +21,5 @@ const filesToCopy = [
 ];
 
 for (const relativePath of filesToCopy) {
-    cpSync(resolve(rootDir, relativePath), resolve(distDir, relativePath.replace(/.*\//, "")));
+    cpSync(resolve(rootDir, relativePath), resolve(distDir, basename(relativePath)));
 }

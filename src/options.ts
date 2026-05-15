@@ -1,64 +1,23 @@
-const OPTIONS_DEFAULT_PREFERRED_LANGUAGE = "English";
-const OPTIONS_DEFAULT_PROMPT_TEMPLATE = [
-    "Hi, I’d like to discuss the following content.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Selected excerpt:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Please:",
-    "- Provide a concise summary",
-    "- Identify the main idea",
-    "- Highlight what is actually important",
-    "- Point out weak or questionable parts",
-    "Use the language of the original material for your response."
-].join("\n");
-const OPTIONS_DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
-    "Hi, I’d like to discuss the following content.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Selected excerpt:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Please:",
-    "- Provide a concise summary",
-    "- Identify the main idea",
-    "- Highlight what is actually important",
-    "- Point out weak or questionable parts",
-    "Use {preferred_language} for your response."
-].join("\n");
-const OPTIONS_SHORT_SUMMARY_PROMPT_TEMPLATE = [
-    "Compact the following material into a short summary.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Material:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Do not analyze or critique it.",
-    "Use the language of the original material for your response."
-].join("\n");
-const OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
-    "Compact the following material into a short summary.",
-    "Title: {page_title}",
-    "URL: {page_url}",
-    "",
-    "{if selected_text}",
-    "Material:",
-    "{selected_text}",
-    "{/if}",
-    "",
-    "Do not analyze or critique it.",
-    "Use {preferred_language} for your response."
-].join("\n");
+import {
+    DEFAULT_PROMPT_TEMPLATE,
+    getDefaultPromptTemplates
+} from "./prompts.js";
+import {
+    DEFAULT_PREFERRED_LANGUAGE,
+    SYNC_SETTING_KEYS
+} from "./settings.js";
+import type {
+    PromptTemplate,
+    State
+} from "./settings.js";
+import type {
+    RuntimeMessage,
+    RuntimeResponse
+} from "./events.js";
+import type {
+    DiscussionState
+} from "./context.js";
+
 const OPTIONS_NEW_PROMPT_TEMPLATE = [
     "Hi, I’d like to discuss the following content.",
     "Title: {page_title}",
@@ -71,11 +30,6 @@ const OPTIONS_NEW_PROMPT_TEMPLATE = [
     "",
     "Use {preferred_language} for your response."
 ].join("\n");
-const OPTIONS_SYNC_SETTING_KEYS: (keyof StorageShape)[] = [
-    "cloudSyncEnabled",
-    "preferredLanguage",
-    "promptTemplates"
-];
 
 const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
 const cloudSyncBtn = document.getElementById("cloudSyncBtn") as HTMLButtonElement | null;
@@ -87,8 +41,8 @@ const statusEl = document.getElementById("status") as HTMLParagraphElement | nul
 const sessionsListEl = document.getElementById("sessionsList") as HTMLDivElement | null;
 const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElement | null;
 
-let savedPreferredLanguage = OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
-let savedPromptTemplates: PromptTemplate[] = getOptionsDefaultPromptTemplates();
+let savedPreferredLanguage = DEFAULT_PREFERRED_LANGUAGE;
+let savedPromptTemplates: PromptTemplate[] = getDefaultPromptTemplates();
 let savedCloudSyncEnabled = false;
 let isLoadingSettings = false;
 let isChangingCloudSync = false;
@@ -159,7 +113,7 @@ async function loadSettings(): Promise<void> {
     isLoadingSettings = true;
 
     try {
-        const syncState = (await chrome.storage.local.get("cloudSyncEnabled")) as StorageShape;
+        const syncState = (await chrome.storage.local.get("cloudSyncEnabled")) as State;
 
         if (syncState.cloudSyncEnabled) {
             await pullOptionsCloudSettingsToLocal().catch((error) => {
@@ -167,7 +121,7 @@ async function loadSettings(): Promise<void> {
             });
         }
 
-        const storage = (await chrome.storage.local.get(OPTIONS_SYNC_SETTING_KEYS)) as StorageShape;
+        const storage = (await chrome.storage.local.get(SYNC_SETTING_KEYS)) as State;
 
         savedCloudSyncEnabled = storage.cloudSyncEnabled === true;
         renderCloudSyncButton();
@@ -363,14 +317,14 @@ async function pullOptionsCloudSettingsToLocal(): Promise<void> {
     await applyOptionsCloudSettingsToLocal(cloudSettings);
 }
 
-async function applyOptionsCloudSettingsToLocal(cloudSettings: StorageShape): Promise<void> {
+async function applyOptionsCloudSettingsToLocal(cloudSettings: State): Promise<void> {
     await chrome.storage.local.set({
         preferredLanguage: normalizeOptionsPreferredLanguage(cloudSettings.preferredLanguage),
         promptTemplates: normalizeOptionsPromptTemplates(cloudSettings.promptTemplates)
     });
 }
 
-function hasOptionsCloudSettings(cloudSettings: StorageShape): boolean {
+function hasOptionsCloudSettings(cloudSettings: State): boolean {
     return typeof cloudSettings.preferredLanguage === "string" || Array.isArray(cloudSettings.promptTemplates);
 }
 
@@ -382,8 +336,8 @@ async function pushOptionsCloudSettings(preferredLanguage: string, promptTemplat
     });
 }
 
-async function readOptionsCloudSettings(): Promise<StorageShape> {
-    return (await chrome.storage.sync.get(OPTIONS_SYNC_SETTING_KEYS)) as StorageShape;
+async function readOptionsCloudSettings(): Promise<State> {
+    return (await chrome.storage.sync.get(SYNC_SETTING_KEYS)) as State;
 }
 
 function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = false): void {
@@ -453,14 +407,14 @@ function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = fals
 
 function readPromptTemplateEditors(): PromptTemplate[] {
     if (!promptTemplatesListEl) {
-        return getOptionsDefaultPromptTemplates();
+        return getDefaultPromptTemplates();
     }
 
     const promptTemplates = Array.from(promptTemplatesListEl.querySelectorAll<HTMLElement>(".promptTemplate"))
         .map((row) => {
             const name = row.querySelector<HTMLInputElement>(".promptTemplateName")?.value.trim() || "Prompt";
             const template = (row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value ?? "").trim() ||
-                OPTIONS_DEFAULT_PROMPT_TEMPLATE;
+                DEFAULT_PROMPT_TEMPLATE;
 
             return {
                 id: row.dataset.templateId || crypto.randomUUID(),
@@ -469,7 +423,7 @@ function readPromptTemplateEditors(): PromptTemplate[] {
             };
         });
 
-    return promptTemplates.length > 0 ? promptTemplates : getOptionsDefaultPromptTemplates();
+    return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
 }
 
 async function requestClearDataAndCache(): Promise<void> {
@@ -508,7 +462,7 @@ async function renderPersistedSessions(): Promise<void> {
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const discussions = Object.entries(storage.discussions ?? {}).sort(([, left], [, right]) => {
         return right.stamp - left.stamp;
     });
@@ -597,15 +551,15 @@ function getMappedTabIds(sessionId: string, tabSessionIds: Record<string, string
 
 function normalizeOptionsPreferredLanguage(value: unknown): string {
     if (typeof value !== "string") {
-        return OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+        return DEFAULT_PREFERRED_LANGUAGE;
     }
 
-    return value.trim() || OPTIONS_DEFAULT_PREFERRED_LANGUAGE;
+    return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
 }
 
 function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
     if (!Array.isArray(value)) {
-        return getOptionsDefaultPromptTemplates();
+        return getDefaultPromptTemplates();
     }
 
     const promptTemplates = value
@@ -617,35 +571,10 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
         .map((promptTemplate) => ({
             id: promptTemplate.id,
             name: promptTemplate.name.trim() || "Prompt",
-            template: promptTemplate.template.trim() || OPTIONS_DEFAULT_PROMPT_TEMPLATE
+            template: promptTemplate.template.trim() || DEFAULT_PROMPT_TEMPLATE
         }));
 
-    return promptTemplates.length > 0 ? promptTemplates : getOptionsDefaultPromptTemplates();
-}
-
-function getOptionsDefaultPromptTemplates(): PromptTemplate[] {
-    return [
-        {
-            id: "default",
-            name: "Default",
-            template: OPTIONS_DEFAULT_PROMPT_TEMPLATE
-        },
-        {
-            id: "default-translated",
-            name: "Default translated",
-            template: OPTIONS_DEFAULT_TRANSLATED_PROMPT_TEMPLATE
-        },
-        {
-            id: "short-summary",
-            name: "Short summary",
-            template: OPTIONS_SHORT_SUMMARY_PROMPT_TEMPLATE
-        },
-        {
-            id: "short-summary-translated",
-            name: "Short summary translated",
-            template: OPTIONS_SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
-        }
-    ];
+    return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
 }
 
 function updateSaveButtonState(): void {

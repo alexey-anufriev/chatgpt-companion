@@ -1,3 +1,15 @@
+import type {
+    RuntimeMessage,
+    RuntimeResponse
+} from "./events.js";
+import type {
+    State
+} from "./settings.js";
+import type {
+    DiscussionMismatch,
+    DiscussionState
+} from "./context.js";
+
 const CHATGPT_BASE_URL = "https://chatgpt.com/";
 
 const sourceTitleEl = document.getElementById("sourceTitle") as HTMLDivElement | null;
@@ -64,7 +76,7 @@ async function init(): Promise<void> {
     attachStorageListener();
 
     await renderSource();
-    await renderLanguageMismatchPrompt();
+    await renderDiscussionMismatchPrompt();
     await syncIframeSession();
 }
 
@@ -82,8 +94,8 @@ function attachStorageListener(): void {
             await syncIframeSession();
         }
 
-        if (changes["pendingLanguageMismatches"]) {
-            await renderLanguageMismatchPrompt();
+        if (changes["discussionMismatches"]) {
+            await renderDiscussionMismatchPrompt();
         }
     });
 }
@@ -106,7 +118,7 @@ function attachEvents(): void {
         const storage = (await chrome.storage.local.get([
             "discussions",
             "tabSessionIds"
-        ])) as StorageShape;
+        ])) as State;
         const sessionId = storage.tabSessionIds?.[String(panelTabId)];
         if (!sessionId || !storage.discussions?.[sessionId]) {
             return;
@@ -138,7 +150,7 @@ function attachEvents(): void {
     });
 
     cancelSessionBtn?.addEventListener("click", () => {
-        void clearPanelLanguageMismatch();
+        void clearPanelDiscussionMismatch();
     });
 
     closeBtn?.addEventListener("click", async () => {
@@ -149,8 +161,8 @@ function attachEvents(): void {
         const storage = (await chrome.storage.local.get([
             "discussions",
             "tabSessionIds",
-            "pendingLanguageMismatches"
-        ])) as StorageShape;
+            "discussionMismatches"
+        ])) as State;
         const tabKey = String(panelTabId);
         const sessionId = storage.tabSessionIds?.[tabKey];
         const discussions = { ...(storage.discussions ?? {}) };
@@ -164,7 +176,7 @@ function attachEvents(): void {
         await chrome.storage.local.set({
             discussions,
             tabSessionIds,
-            pendingLanguageMismatches: removePanelLanguageMismatch(storage.pendingLanguageMismatches),
+            discussionMismatches: removePanelDiscussionMismatch(storage.discussionMismatches),
             closeDiscussionSessionId: sessionId
         });
 
@@ -177,14 +189,14 @@ function attachEvents(): void {
 }
 
 /**
- * Renders a tab-scoped settings mismatch prompt when one is pending.
+ * Renders a tab-scoped discussion mismatch prompt when one is pending.
  */
-async function renderLanguageMismatchPrompt(): Promise<void> {
+async function renderDiscussionMismatchPrompt(): Promise<void> {
     if (!languageMismatchPrompt || !languageMismatchText) {
         return;
     }
 
-    const mismatch = await getPanelLanguageMismatch();
+    const mismatch = await getPanelDiscussionMismatch();
 
     if (!mismatch) {
         languageMismatchPrompt.classList.add("hidden");
@@ -219,16 +231,16 @@ function createMismatchRow(label: string, templateName: string, language: string
 }
 
 /**
- * Clears this panel tab's pending settings mismatch prompt.
+ * Clears this panel tab's pending discussion mismatch prompt.
  */
-async function clearPanelLanguageMismatch(): Promise<void> {
+async function clearPanelDiscussionMismatch(): Promise<void> {
     if (panelTabId === null) {
         return;
     }
 
-    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
+    const storage = (await chrome.storage.local.get("discussionMismatches")) as State;
     await chrome.storage.local.set({
-        pendingLanguageMismatches: removePanelLanguageMismatch(storage.pendingLanguageMismatches)
+        discussionMismatches: removePanelDiscussionMismatch(storage.discussionMismatches)
     });
 }
 
@@ -240,7 +252,7 @@ async function continuePanelDiscussion(): Promise<void> {
         return;
     }
 
-    const mismatch = await getPanelLanguageMismatch();
+    const mismatch = await getPanelDiscussionMismatch();
     if (!mismatch) {
         return;
     }
@@ -274,7 +286,7 @@ async function startNewPanelDiscussion(): Promise<void> {
         return;
     }
 
-    const mismatch = await getPanelLanguageMismatch();
+    const mismatch = await getPanelDiscussionMismatch();
     if (!mismatch) {
         return;
     }
@@ -301,30 +313,30 @@ async function startNewPanelDiscussion(): Promise<void> {
 }
 
 /**
- * Returns the pending settings mismatch for this panel tab.
+ * Returns the pending discussion mismatch for this panel tab.
  */
-async function getPanelLanguageMismatch(): Promise<PendingLanguageMismatch | null> {
+async function getPanelDiscussionMismatch(): Promise<DiscussionMismatch | null> {
     if (panelTabId === null) {
         return null;
     }
 
-    const storage = (await chrome.storage.local.get("pendingLanguageMismatches")) as StorageShape;
-    return storage.pendingLanguageMismatches?.[String(panelTabId)] ?? null;
+    const storage = (await chrome.storage.local.get("discussionMismatches")) as State;
+    return storage.discussionMismatches?.[String(panelTabId)] ?? null;
 }
 
 /**
- * Removes this panel tab's settings mismatch from a mismatch map.
+ * Removes this panel tab's discussion mismatch from a mismatch map.
  */
-function removePanelLanguageMismatch(
-    pendingLanguageMismatches: Record<string, PendingLanguageMismatch> | undefined
-): Record<string, PendingLanguageMismatch> {
+function removePanelDiscussionMismatch(
+    discussionMismatches: Record<string, DiscussionMismatch> | undefined
+): Record<string, DiscussionMismatch> {
     if (panelTabId === null) {
-        return pendingLanguageMismatches ?? {};
+        return discussionMismatches ?? {};
     }
 
-    const nextPendingLanguageMismatches = { ...(pendingLanguageMismatches ?? {}) };
-    delete nextPendingLanguageMismatches[String(panelTabId)];
-    return nextPendingLanguageMismatches;
+    const nextDiscussionMismatches = { ...(discussionMismatches ?? {}) };
+    delete nextDiscussionMismatches[String(panelTabId)];
+    return nextDiscussionMismatches;
 }
 
 /**
@@ -380,7 +392,7 @@ async function syncIframeSession(): Promise<void> {
     const data = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const sessionId = data.tabSessionIds?.[String(panelTabId)];
 
     if (!sessionId) {
@@ -426,7 +438,7 @@ async function getPanelDiscussion(): Promise<DiscussionState | null> {
     const data = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
-    ])) as StorageShape;
+    ])) as State;
     const sessionId = data.tabSessionIds?.[String(panelTabId)];
 
     return sessionId ? data.discussions?.[sessionId] ?? null : null;

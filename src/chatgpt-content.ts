@@ -1,3 +1,5 @@
+type State = import("./settings.js").State;
+
 /**
  * Stamp of the last prompt written into the composer, used as an in-page guard
  * against duplicate insertions from repeated storage notifications.
@@ -156,7 +158,7 @@ async function rememberCurrentChatUrl(): Promise<void> {
         return;
     }
 
-    const data = (await chrome.storage.local.get("discussions")) as StorageShape;
+    const data = (await chrome.storage.local.get("discussions")) as State;
     const discussion = data.discussions?.[currentSessionId];
     if (!discussion) {
         return;
@@ -222,7 +224,7 @@ async function tryApplyLatestPrompt(): Promise<void> {
         return;
     }
 
-    const data = (await chrome.storage.local.get("discussions")) as StorageShape;
+    const data = (await chrome.storage.local.get("discussions")) as State;
     const discussion = data.discussions?.[currentSessionId];
 
     if (!discussion || !discussion.stamp || discussion.consumed) {
@@ -270,7 +272,7 @@ async function tryApplyLatestPrompt(): Promise<void> {
 async function clearChatGPTNullThreadDraft(): Promise<void> {
     const { closeDiscussionSessionId } = (await chrome.storage.local.get(
         "closeDiscussionSessionId"
-    )) as StorageShape;
+    )) as State;
     const currentSessionId = getCurrentSessionId();
 
     if (!closeDiscussionSessionId || !currentSessionId || closeDiscussionSessionId !== currentSessionId) {
@@ -284,7 +286,7 @@ async function clearChatGPTNullThreadDraft(): Promise<void> {
     } finally {
         // clear the close signal only if this page still owns it; a newer close
         // event for another session should remain visible to that tab
-        const latest = (await chrome.storage.local.get("closeDiscussionSessionId")) as StorageShape;
+        const latest = (await chrome.storage.local.get("closeDiscussionSessionId")) as State;
         if (latest.closeDiscussionSessionId === currentSessionId) {
             await chrome.storage.local.set({
                 closeDiscussionSessionId: undefined
