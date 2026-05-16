@@ -35,6 +35,7 @@ const OPTIONS_NEW_PROMPT_TEMPLATE = [
 
 const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
 const preferredChatModeSelect = document.getElementById("preferredChatMode") as HTMLSelectElement | null;
+const shortcutSettingsBtn = document.getElementById("shortcutSettingsBtn") as HTMLButtonElement | null;
 const cloudSyncBtn = document.getElementById("cloudSyncBtn") as HTMLButtonElement | null;
 const saveSettingsBtn = document.getElementById("saveSettingsBtn") as HTMLButtonElement | null;
 const addPromptTemplateBtn = document.getElementById("addPromptTemplateBtn") as HTMLButtonElement | null;
@@ -58,6 +59,7 @@ let statusClearTimer: number | undefined;
 if (
     !preferredLanguageInput ||
     !preferredChatModeSelect ||
+    !shortcutSettingsBtn ||
     !cloudSyncBtn ||
     !saveSettingsBtn ||
     !addPromptTemplateBtn ||
@@ -78,6 +80,10 @@ if (
 
     saveSettingsBtn.addEventListener("click", () => {
         void saveSettings();
+    });
+
+    shortcutSettingsBtn.addEventListener("click", () => {
+        void openShortcutSettings();
     });
 
     cloudSyncBtn.addEventListener("click", () => {
@@ -118,6 +124,17 @@ if (
 
     void loadSettings();
     void renderPersistedSessions();
+}
+
+async function openShortcutSettings(): Promise<void> {
+    try {
+        await chrome.tabs.create({
+            url: "chrome://extensions/shortcuts"
+        });
+    } catch (error) {
+        console.error("[chatgpt-companion] shortcut settings open failed", error);
+        setStatus("Open chrome://extensions/shortcuts to change the hotkey.");
+    }
 }
 
 async function loadSettings(): Promise<void> {
