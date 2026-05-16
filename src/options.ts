@@ -44,6 +44,8 @@ const statusEl = document.getElementById("status") as HTMLParagraphElement | nul
 const sessionsListEl = document.getElementById("sessionsList") as HTMLDivElement | null;
 const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElement | null;
 
+type SessionEntry = [string, DiscussionState];
+
 let savedPreferredLanguage = DEFAULT_PREFERRED_LANGUAGE;
 let savedPreferredChatMode: PreferredChatMode = DEFAULT_PREFERRED_CHAT_MODE;
 let savedPromptTemplates: PromptTemplate[] = getDefaultPromptTemplates();
@@ -495,14 +497,18 @@ async function renderPersistedSessions(): Promise<void> {
         return;
     }
 
+    await requestSyncSessionTabs();
+
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
     ])) as State;
     const discussions = Object.entries(storage.discussions ?? {}).sort(([, left], [, right]) => {
         return right.stamp - left.stamp;
-    });
+    }) as SessionEntry[];
     const tabSessionIds = storage.tabSessionIds ?? {};
+    const openSessionEntries = discussions.filter(([sessionId]) => getMappedTabIds(sessionId, tabSessionIds).length > 0);
+    const historySessionEntries = discussions.filter(([sessionId]) => getMappedTabIds(sessionId, tabSessionIds).length === 0);
 
     sessionCountEl.textContent = String(discussions.length);
     sessionsListEl.replaceChildren();
@@ -515,7 +521,34 @@ async function renderPersistedSessions(): Promise<void> {
         return;
     }
 
-    for (const [sessionId, discussion] of discussions) {
+    appendSessionGroup("Open Sessions", openSessionEntries, tabSessionIds, "No sessions are attached to open tabs.");
+    appendSessionGroup("History", historySessionEntries, tabSessionIds, "No detached sessions.");
+}
+
+function appendSessionGroup(
+    title: string,
+    sessions: SessionEntry[],
+    tabSessionIds: Record<string, string>,
+    emptyMessage: string
+): void {
+    if (!sessionsListEl) {
+        return;
+    }
+
+    const header = document.createElement("div");
+    header.className = "sessionGroupHeader";
+    header.textContent = `${title} (${sessions.length})`;
+    sessionsListEl.append(header);
+
+    if (sessions.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = emptyMessage;
+        sessionsListEl.append(empty);
+        return;
+    }
+
+    for (const [sessionId, discussion] of sessions) {
         sessionsListEl.append(createSessionRow(sessionId, discussion, tabSessionIds));
     }
 }
@@ -564,6 +597,31 @@ function createSessionRow(
 
     chatUrlRow.append(chatUrlLabel, chatUrl);
 
+    const mappedTabIds = getMappedTabIds(sessionId, tabSessionIds);
+    const sessionHeader = document.createElement("div");
+    sessionHeader.className = "sessionHeader";
+    sessionHeader.append(title);
+
+    if (mappedTabIds.length > 0) {
+        const jumpButton = document.createElement("button");
+        jumpButton.type = "button";
+        jumpButton.className = "sessionJumpButton";
+        jumpButton.textContent = "Jump to tab";
+        jumpButton.addEventListener("click", () => {
+            void requestFocusSessionTab(sessionId, Number(mappedTabIds[0]), jumpButton);
+        });
+        sessionHeader.append(jumpButton);
+    }
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "sessionDeleteButton";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => {
+        void requestDeleteSession(sessionId, deleteButton);
+    });
+    sessionHeader.append(deleteButton);
+
     const meta = document.createElement("div");
     meta.className = "sessionMeta";
     meta.textContent = [
@@ -572,11 +630,93 @@ function createSessionRow(
         `prompt: ${discussion.promptTemplateName}`,
         `updated: ${new Date(discussion.stamp).toLocaleString()}`,
         `consumed: ${discussion.consumed ? "yes" : "no"}`,
-        `tab: ${getMappedTabIds(sessionId, tabSessionIds).join(", ") || "none"}`
+        `tab: ${mappedTabIds.join(", ") || "not open"}`
     ].join(" | ");
 
-    row.append(title, sourceUrlRow, chatUrlRow, meta);
+    row.append(sessionHeader, sourceUrlRow, chatUrlRow, meta);
     return row;
+}
+
+async function requestDeleteSession(sessionId: string, button: HTMLButtonElement): Promise<void> {
+    if (!confirm("Delete this persisted session?")) {
+        return;
+    }
+
+    button.disabled = true;
+    setStatus("Deleting session...", false);
+
+    try {
+        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+            type: "delete-session",
+            sessionId
+        });
+
+        if (!response?.ok) {
+            throw new Error(response?.error || "Delete session failed");
+        }
+
+        setStatus("Session deleted.");
+        await renderPersistedSessions();
+    } catch (error) {
+        console.error("[chatgpt-companion] delete session failed", error);
+        setStatus(error instanceof Error ? error.message : "Delete session failed.");
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function requestSyncSessionTabs(): Promise<void> {
+    try {
+        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+            type: "sync-session-tabs"
+        });
+
+        if (!response?.ok) {
+            throw new Error(response?.error || "Session tab sync failed");
+        }
+    } catch (error) {
+        console.error("[chatgpt-companion] session tab sync failed", error);
+    }
+}
+
+async function requestFocusSessionTab(sessionId: string, tabId: number, button: HTMLButtonElement): Promise<void> {
+    button.disabled = true;
+    openSidePanelForTab(tabId);
+
+    try {
+        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+            type: "focus-session-tab",
+            sessionId
+        });
+
+        if (!response?.ok) {
+            throw new Error(response?.error || "Tab focus failed");
+        }
+    } catch (error) {
+        console.error("[chatgpt-companion] focus session tab failed", error);
+        setStatus(error instanceof Error ? error.message : "Tab is no longer open.");
+        await renderPersistedSessions();
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function openSidePanelForTab(tabId: number): void {
+    if (!Number.isInteger(tabId)) {
+        return;
+    }
+
+    void chrome.sidePanel.setOptions({
+        tabId,
+        path: `sidepanel.html?tabId=${tabId}`,
+        enabled: true
+    }).catch((error) => {
+        console.error("[chatgpt-companion] side panel configuration failed", error);
+    });
+
+    void chrome.sidePanel.open({ tabId }).catch((error) => {
+        console.error("[chatgpt-companion] side panel open failed", error);
+    });
 }
 
 function getMappedTabIds(sessionId: string, tabSessionIds: Record<string, string>): string[] {

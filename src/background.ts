@@ -151,6 +151,30 @@ chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefin
                 .catch((error) => sendErrorResponse("startNewDiscussion failed", error, sendResponse));
             return true;
 
+        case "sync-session-tabs":
+            void restoreDiscussionMappingsForOpenTabs()
+                .then((tabSessionIds) => sendResponse({
+                    ok: true,
+                    tabSessionIds
+                } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("syncSessionTabs failed", error, sendResponse));
+            return true;
+
+        case "focus-session-tab":
+            void focusSessionTab(message)
+                .then((focusedTabId) => sendResponse({
+                    ok: true,
+                    focusedTabId
+                } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("focusSessionTab failed", error, sendResponse));
+            return true;
+
+        case "delete-session":
+            void deleteSession(message)
+                .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("deleteSession failed", error, sendResponse));
+            return true;
+
         default:
             return false;
     }
@@ -299,7 +323,7 @@ async function restoreMappingsAndConfigurePanels(): Promise<void> {
 /**
  * Rebuilds tab-session mappings after Chrome restores tabs with new ids.
  */
-async function restoreDiscussionMappingsForOpenTabs(): Promise<void> {
+async function restoreDiscussionMappingsForOpenTabs(): Promise<Record<string, string>> {
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
@@ -308,8 +332,11 @@ async function restoreDiscussionMappingsForOpenTabs(): Promise<void> {
     const discussionEntries = Object.entries(discussions);
 
     if (discussionEntries.length === 0) {
-        await chrome.storage.local.set({ tabSessionIds: {} });
-        return;
+        if (!areStringRecordsEqual(storage.tabSessionIds ?? {}, {})) {
+            await chrome.storage.local.set({ tabSessionIds: {} });
+        }
+
+        return {};
     }
 
     const tabs = await chrome.tabs.query({});
@@ -347,7 +374,19 @@ async function restoreDiscussionMappingsForOpenTabs(): Promise<void> {
         assignedSessionIds.add(sessionId);
     }
 
-    await chrome.storage.local.set({ tabSessionIds });
+    if (!areStringRecordsEqual(storage.tabSessionIds ?? {}, tabSessionIds)) {
+        await chrome.storage.local.set({ tabSessionIds });
+    }
+
+    return tabSessionIds;
+}
+
+function areStringRecordsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
+    const leftEntries = Object.entries(left);
+    const rightEntries = Object.entries(right);
+
+    return leftEntries.length === rightEntries.length &&
+        leftEntries.every(([key, value]) => right[key] === value);
 }
 
 /**
@@ -499,6 +538,77 @@ async function clearDataAndCache(): Promise<void> {
     await clearCacheStorage();
     createContextMenus();
     await ensurePanelConfiguredForAllTabs();
+}
+
+/**
+ * Focuses the browser tab currently mapped to a persisted discussion session.
+ */
+async function focusSessionTab(message: Partial<RuntimeMessage>): Promise<number> {
+    if (message.type !== "focus-session-tab" || typeof message.sessionId !== "string") {
+        throw new Error("Focus request is missing session id");
+    }
+
+    const tabSessionIds = await restoreDiscussionMappingsForOpenTabs();
+    const tabId = Object.entries(tabSessionIds).find(([, sessionId]) => {
+        return sessionId === message.sessionId;
+    })?.[0];
+
+    if (!tabId) {
+        throw new Error("Session is not attached to an open tab");
+    }
+
+    const numericTabId = Number(tabId);
+    const tab = await chrome.tabs.get(numericTabId);
+
+    if (typeof tab.windowId === "number") {
+        await chrome.windows.update(tab.windowId, { focused: true });
+    }
+
+    await chrome.tabs.update(numericTabId, { active: true });
+    return numericTabId;
+}
+
+/**
+ * Removes one persisted discussion and any open-tab mappings that point to it.
+ */
+async function deleteSession(message: Partial<RuntimeMessage>): Promise<void> {
+    if (message.type !== "delete-session" || typeof message.sessionId !== "string") {
+        throw new Error("Delete request is missing session id");
+    }
+
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds",
+        "discussionMismatches"
+    ])) as State;
+
+    const discussions = { ...(storage.discussions ?? {}) };
+    const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+    const discussionMismatches = { ...(storage.discussionMismatches ?? {}) };
+    const removedTabIds: string[] = [];
+
+    delete discussions[message.sessionId];
+
+    for (const [tabId, sessionId] of Object.entries(tabSessionIds)) {
+        if (sessionId !== message.sessionId) {
+            continue;
+        }
+
+        delete tabSessionIds[tabId];
+        delete discussionMismatches[tabId];
+        removedTabIds.push(tabId);
+    }
+
+    await chrome.storage.local.set({
+        discussions,
+        tabSessionIds,
+        discussionMismatches,
+        closeDiscussionSessionId: message.sessionId
+    });
+
+    await Promise.all(
+        removedTabIds.map((tabId) => ensurePanelConfiguredForTab(Number(tabId)))
+    );
 }
 
 /**

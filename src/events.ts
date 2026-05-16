@@ -29,6 +29,22 @@ export type RuntimeMessage =
         requestedLinkUrl?: string;
         /** source text to pass into the new prompt */
         selectionText: string;
+    }
+    | {
+        /** refresh persisted session to open-tab mappings */
+        type: "sync-session-tabs";
+    }
+    | {
+        /** focus the open browser tab mapped to a persisted session */
+        type: "focus-session-tab";
+        /** extension discussion session id to focus */
+        sessionId: string;
+    }
+    | {
+        /** delete one persisted discussion session and any live tab mappings */
+        type: "delete-session";
+        /** extension discussion session id to delete */
+        sessionId: string;
     };
 
 /**
@@ -39,4 +55,8 @@ export type RuntimeResponse = {
     ok: boolean;
     /** normalized error message when ok is false */
     error?: string;
+    /** refreshed source tab id to session id mapping */
+    tabSessionIds?: Record<string, string>;
+    /** tab id focused by a successful request */
+    focusedTabId?: number;
 };

@@ -247,6 +247,17 @@ h2,
     gap: 8px;
 }
 
+.sessionGroupHeader {
+    margin-top: 10px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.sessionGroupHeader:first-child {
+    margin-top: 0;
+}
+
 .session {
     display: grid;
     gap: 6px;
@@ -262,6 +273,36 @@ h2,
     color: #111827;
     font-size: 14px;
     font-weight: 600;
+}
+
+.sessionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sessionHeader h3 {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sessionJumpButton,
+.sessionDeleteButton {
+    flex: 0 0 auto;
+    padding: 6px 9px;
+    font-size: 12px;
+}
+
+.sessionDeleteButton {
+    border-color: #f0b8b8;
+    color: #9f1d1d;
+}
+
+.sessionDeleteButton:hover:not(:disabled) {
+    border-color: #e58e8e;
+    background: #fff5f5;
 }
 
 .session a {
@@ -315,6 +356,16 @@ h2,
     .settingsActions button,
     .promptTemplateActions button {
         flex: 1;
+    }
+
+    .sessionHeader {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .sessionJumpButton,
+    .sessionDeleteButton {
+        width: 100%;
     }
 
     .sessionUrl {
