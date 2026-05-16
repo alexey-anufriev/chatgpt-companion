@@ -1,4 +1,7 @@
 type State = import("./settings.js").State;
+type PreferredSendingMode = import("./settings.js").PreferredSendingMode;
+
+const DEFAULT_PREFERRED_SENDING_MODE: PreferredSendingMode = "manual";
 
 /**
  * Stamp of the last prompt written into the composer, used as an in-page guard
@@ -260,6 +263,7 @@ async function tryApplyLatestPrompt(): Promise<void> {
 
     if (discussion.prompt) {
         console.log("[chatgpt-companion] prompt inserted", { currentSessionId });
+        await submitPromptIfAutoSendingEnabled();
     } else {
         console.log("[chatgpt-companion] composer cleared", { currentSessionId });
     }
@@ -429,6 +433,65 @@ function insertPrompt(element: HTMLElement | HTMLTextAreaElement, text: string):
             data: isClear ? null : text
         })
     );
+}
+
+/**
+ * Submits the composer after insertion when the user opted into auto sending.
+ */
+async function submitPromptIfAutoSendingEnabled(): Promise<void> {
+    const storage = (await chrome.storage.local.get("preferredSendingMode")) as State;
+    if (normalizePreferredSendingMode(storage.preferredSendingMode) !== "auto") {
+        return;
+    }
+
+    await sleep(250);
+
+    const sendButton = await waitForSendButton();
+    if (!sendButton) {
+        console.warn("[chatgpt-companion] ChatGPT send button not found");
+        return;
+    }
+
+    sendButton.click();
+    console.log("[chatgpt-companion] prompt submitted");
+}
+
+/**
+ * Polls known ChatGPT send button selectors until the enabled button is ready.
+ */
+async function waitForSendButton(timeoutMs = 5000): Promise<HTMLButtonElement | null> {
+    const selectors = [
+        'form button[data-testid="send-button"]',
+        'form button[data-testid="composer-submit-button"]',
+        'button[data-testid="send-button"]',
+        'button[data-testid="composer-submit-button"]',
+        'form button[aria-label*="Send" i]',
+        'button[aria-label*="Send" i]'
+    ];
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+        for (const selector of selectors) {
+            const button = document.querySelector(selector);
+            if (button instanceof HTMLButtonElement && isUsableButton(button)) {
+                return button;
+            }
+        }
+
+        await sleep(100);
+    }
+
+    return null;
+}
+
+function isUsableButton(button: HTMLButtonElement): boolean {
+    return isVisible(button) &&
+        !button.disabled &&
+        button.getAttribute("aria-disabled") !== "true";
+}
+
+function normalizePreferredSendingMode(value: unknown): PreferredSendingMode {
+    return value === "auto" ? "auto" : DEFAULT_PREFERRED_SENDING_MODE;
 }
 
 /**

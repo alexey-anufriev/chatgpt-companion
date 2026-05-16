@@ -5,8 +5,10 @@ import type {
 
 export const DEFAULT_PREFERRED_LANGUAGE = "English";
 export const DEFAULT_PREFERRED_CHAT_MODE = "normal";
+export const DEFAULT_PREFERRED_SENDING_MODE = "manual";
 
 export type PreferredChatMode = "normal" | "temporary";
+export type PreferredSendingMode = "manual" | "auto";
 
 /**
  * User-editable prompt template stored in extension settings.
@@ -36,6 +38,8 @@ export type State = {
     preferredLanguage?: string;
     /** preferred ChatGPT entry mode for new side panel loads */
     preferredChatMode?: PreferredChatMode;
+    /** whether injected prompts should stay in the composer or submit automatically */
+    preferredSendingMode?: PreferredSendingMode;
     /** stored prompt templates that override the hardcoded default */
     promptTemplates?: PromptTemplate[];
     /** whether extension settings should mirror to chrome.storage.sync */
@@ -47,6 +51,7 @@ export type State = {
 export const SYNC_SETTING_KEYS: (keyof State)[] = [
     "cloudSyncEnabled",
     "preferredLanguage",
+    "preferredSendingMode",
     "preferredChatMode",
     "promptTemplates"
 ];

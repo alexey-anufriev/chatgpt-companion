@@ -26,6 +26,13 @@
         <p class="sectionDescription">Used by prompt templates that include the preferred language macro.</p>
         <input id="preferredLanguage" type="text" autocomplete="off" />
 
+        <label for="preferredSendingMode">Sending mode</label>
+        <p class="sectionDescription">Controls whether inserted prompts are submitted automatically.</p>
+        <select id="preferredSendingMode">
+            <option value="manual">Manual</option>
+            <option value="auto">Auto</option>
+        </select>
+
         <label for="preferredChatMode">Preferred chat mode</label>
         <p class="sectionDescription">Used when opening ChatGPT without a saved conversation URL.</p>
         <select id="preferredChatMode">

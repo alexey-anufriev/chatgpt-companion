@@ -5,10 +5,12 @@ import {
 import {
     DEFAULT_PREFERRED_CHAT_MODE,
     DEFAULT_PREFERRED_LANGUAGE,
+    DEFAULT_PREFERRED_SENDING_MODE,
     SYNC_SETTING_KEYS
 } from "./settings.js";
 import type {
     PreferredChatMode,
+    PreferredSendingMode,
     PromptTemplate,
     State
 } from "./settings.js";
@@ -34,6 +36,7 @@ const OPTIONS_NEW_PROMPT_TEMPLATE = [
 ].join("\n");
 
 const preferredLanguageInput = document.getElementById("preferredLanguage") as HTMLInputElement | null;
+const preferredSendingModeSelect = document.getElementById("preferredSendingMode") as HTMLSelectElement | null;
 const preferredChatModeSelect = document.getElementById("preferredChatMode") as HTMLSelectElement | null;
 const shortcutSettingsBtn = document.getElementById("shortcutSettingsBtn") as HTMLButtonElement | null;
 const cloudSyncBtn = document.getElementById("cloudSyncBtn") as HTMLButtonElement | null;
@@ -48,6 +51,7 @@ const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElemen
 type SessionEntry = [string, DiscussionState];
 
 let savedPreferredLanguage = DEFAULT_PREFERRED_LANGUAGE;
+let savedPreferredSendingMode: PreferredSendingMode = DEFAULT_PREFERRED_SENDING_MODE;
 let savedPreferredChatMode: PreferredChatMode = DEFAULT_PREFERRED_CHAT_MODE;
 let savedPromptTemplates: PromptTemplate[] = getDefaultPromptTemplates();
 let savedCloudSyncEnabled = false;
@@ -58,6 +62,7 @@ let statusClearTimer: number | undefined;
 
 if (
     !preferredLanguageInput ||
+    !preferredSendingModeSelect ||
     !preferredChatModeSelect ||
     !shortcutSettingsBtn ||
     !cloudSyncBtn ||
@@ -72,6 +77,9 @@ if (
     console.error("[chatgpt-companion] options DOM elements not found");
 } else {
     preferredLanguageInput.addEventListener("input", () => {
+        updateSaveButtonState();
+    });
+    preferredSendingModeSelect.addEventListener("change", () => {
         updateSaveButtonState();
     });
     preferredChatModeSelect.addEventListener("change", () => {
@@ -113,6 +121,7 @@ if (
             areaName === "local" &&
             (
                 changes["preferredLanguage"] ||
+                changes["preferredSendingMode"] ||
                 changes["preferredChatMode"] ||
                 changes["promptTemplates"] ||
                 changes["cloudSyncEnabled"]
@@ -158,6 +167,7 @@ async function loadSettings(): Promise<void> {
         savedCloudSyncEnabled = storage.cloudSyncEnabled === true;
         renderCloudSyncButton();
         renderPreferredLanguage(storage.preferredLanguage);
+        renderPreferredSendingMode(storage.preferredSendingMode);
         renderPreferredChatMode(storage.preferredChatMode);
         renderPromptTemplates(storage.promptTemplates);
     } finally {
@@ -172,6 +182,16 @@ function renderPreferredLanguage(preferredLanguage: unknown): void {
 
     savedPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguage);
     preferredLanguageInput.value = savedPreferredLanguage;
+    updateSaveButtonState();
+}
+
+function renderPreferredSendingMode(preferredSendingMode: unknown): void {
+    if (!preferredSendingModeSelect) {
+        return;
+    }
+
+    savedPreferredSendingMode = normalizeOptionsPreferredSendingMode(preferredSendingMode);
+    preferredSendingModeSelect.value = savedPreferredSendingMode;
     updateSaveButtonState();
 }
 
@@ -201,11 +221,18 @@ function renderPromptTemplates(promptTemplates: unknown): void {
 }
 
 async function saveSettings(): Promise<void> {
-    if (!preferredLanguageInput || !preferredChatModeSelect || !saveSettingsBtn || !statusEl) {
+    if (
+        !preferredLanguageInput ||
+        !preferredSendingModeSelect ||
+        !preferredChatModeSelect ||
+        !saveSettingsBtn ||
+        !statusEl
+    ) {
         return;
     }
 
     const nextPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguageInput.value);
+    const nextPreferredSendingMode = normalizeOptionsPreferredSendingMode(preferredSendingModeSelect.value);
     const nextPreferredChatMode = normalizeOptionsPreferredChatMode(preferredChatModeSelect.value);
     const nextPromptTemplates = readPromptTemplateEditors();
 
@@ -216,20 +243,28 @@ async function saveSettings(): Promise<void> {
     try {
         await chrome.storage.local.set({
             preferredLanguage: nextPreferredLanguage,
+            preferredSendingMode: nextPreferredSendingMode,
             preferredChatMode: nextPreferredChatMode,
             promptTemplates: nextPromptTemplates
         });
 
         savedPreferredLanguage = nextPreferredLanguage;
+        savedPreferredSendingMode = nextPreferredSendingMode;
         savedPreferredChatMode = nextPreferredChatMode;
         savedPromptTemplates = nextPromptTemplates;
         preferredLanguageInput.value = nextPreferredLanguage;
+        preferredSendingModeSelect.value = nextPreferredSendingMode;
         preferredChatModeSelect.value = nextPreferredChatMode;
         renderPromptTemplates(nextPromptTemplates);
 
         if (savedCloudSyncEnabled) {
             try {
-                await pushOptionsCloudSettings(nextPreferredLanguage, nextPreferredChatMode, nextPromptTemplates);
+                await pushOptionsCloudSettings(
+                    nextPreferredLanguage,
+                    nextPreferredSendingMode,
+                    nextPreferredChatMode,
+                    nextPromptTemplates
+                );
                 setStatus("Settings saved and queued for cloud sync.");
             } catch (error) {
                 console.error("[chatgpt-companion] cloud settings save failed", error);
@@ -367,6 +402,7 @@ async function pullOptionsCloudSettingsToLocal(): Promise<void> {
 async function applyOptionsCloudSettingsToLocal(cloudSettings: State): Promise<void> {
     await chrome.storage.local.set({
         preferredLanguage: normalizeOptionsPreferredLanguage(cloudSettings.preferredLanguage),
+        preferredSendingMode: normalizeOptionsPreferredSendingMode(cloudSettings.preferredSendingMode),
         preferredChatMode: normalizeOptionsPreferredChatMode(cloudSettings.preferredChatMode),
         promptTemplates: normalizeOptionsPromptTemplates(cloudSettings.promptTemplates)
     });
@@ -374,18 +410,21 @@ async function applyOptionsCloudSettingsToLocal(cloudSettings: State): Promise<v
 
 function hasOptionsCloudSettings(cloudSettings: State): boolean {
     return typeof cloudSettings.preferredLanguage === "string" ||
+        typeof cloudSettings.preferredSendingMode === "string" ||
         typeof cloudSettings.preferredChatMode === "string" ||
         Array.isArray(cloudSettings.promptTemplates);
 }
 
 async function pushOptionsCloudSettings(
     preferredLanguage: string,
+    preferredSendingMode: PreferredSendingMode,
     preferredChatMode: PreferredChatMode,
     promptTemplates: PromptTemplate[]
 ): Promise<void> {
     await chrome.storage.sync.set({
         cloudSyncEnabled: true,
         preferredLanguage,
+        preferredSendingMode,
         preferredChatMode,
         promptTemplates
     });
@@ -750,6 +789,10 @@ function normalizeOptionsPreferredLanguage(value: unknown): string {
     return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
 }
 
+function normalizeOptionsPreferredSendingMode(value: unknown): PreferredSendingMode {
+    return value === "auto" ? "auto" : DEFAULT_PREFERRED_SENDING_MODE;
+}
+
 function normalizeOptionsPreferredChatMode(value: unknown): PreferredChatMode {
     return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
 }
@@ -775,11 +818,12 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
 }
 
 function updateSaveButtonState(): void {
-    if (!preferredLanguageInput || !preferredChatModeSelect || !saveSettingsBtn) {
+    if (!preferredLanguageInput || !preferredSendingModeSelect || !preferredChatModeSelect || !saveSettingsBtn) {
         return;
     }
 
     const currentPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguageInput.value);
+    const currentPreferredSendingMode = normalizeOptionsPreferredSendingMode(preferredSendingModeSelect.value);
     const currentPreferredChatMode = normalizeOptionsPreferredChatMode(preferredChatModeSelect.value);
     const promptTemplatesChanged = serializePromptTemplates(readPromptTemplateEditors()) !==
         serializePromptTemplates(savedPromptTemplates);
@@ -787,6 +831,7 @@ function updateSaveButtonState(): void {
     saveSettingsBtn.disabled = isSavingSettings ||
         (
             currentPreferredLanguage === savedPreferredLanguage &&
+            currentPreferredSendingMode === savedPreferredSendingMode &&
             currentPreferredChatMode === savedPreferredChatMode &&
             !promptTemplatesChanged
         );

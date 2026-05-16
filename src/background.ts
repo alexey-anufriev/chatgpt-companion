@@ -5,10 +5,12 @@ import {
 import {
     DEFAULT_PREFERRED_CHAT_MODE,
     DEFAULT_PREFERRED_LANGUAGE,
+    DEFAULT_PREFERRED_SENDING_MODE,
     SYNC_SETTING_KEYS
 } from "./settings.js";
 import type {
     PreferredChatMode,
+    PreferredSendingMode,
     PromptTemplate,
     State
 } from "./settings.js";
@@ -125,7 +127,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
     if (
         areaName === "sync" &&
-        (changes["preferredLanguage"] || changes["preferredChatMode"] || changes["promptTemplates"])
+        (
+            changes["preferredLanguage"] ||
+            changes["preferredSendingMode"] ||
+            changes["preferredChatMode"] ||
+            changes["promptTemplates"]
+        )
     ) {
         void pullCloudSettingsToLocal()
             .then((didPull) => {
@@ -257,6 +264,7 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
 
     await chrome.storage.local.set({
         preferredLanguage: normalizePreferredLanguage(cloudSettings.preferredLanguage),
+        preferredSendingMode: normalizePreferredSendingMode(cloudSettings.preferredSendingMode),
         preferredChatMode: normalizePreferredChatMode(cloudSettings.preferredChatMode),
         promptTemplates: normalizePromptTemplates(cloudSettings.promptTemplates)
     });
@@ -269,6 +277,7 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
  */
 function hasCloudSettings(cloudSettings: State): boolean {
     return typeof cloudSettings.preferredLanguage === "string" ||
+        typeof cloudSettings.preferredSendingMode === "string" ||
         typeof cloudSettings.preferredChatMode === "string" ||
         Array.isArray(cloudSettings.promptTemplates);
 }
@@ -1155,6 +1164,10 @@ function normalizePreferredLanguage(value: unknown): string {
     }
 
     return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
+}
+
+function normalizePreferredSendingMode(value: unknown): PreferredSendingMode {
+    return value === "auto" ? "auto" : DEFAULT_PREFERRED_SENDING_MODE;
 }
 
 function normalizePreferredChatMode(value: unknown): PreferredChatMode {
