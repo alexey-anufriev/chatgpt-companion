@@ -525,6 +525,10 @@ async function requestClearDataAndCache(): Promise<void> {
         return;
     }
 
+    if (!confirm("Clear all persisted sessions, mappings, drafts, and extension cache?")) {
+        return;
+    }
+
     clearDataBtn.disabled = true;
     setStatus("Clearing data...", false);
 
