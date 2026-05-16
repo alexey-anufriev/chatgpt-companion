@@ -11,6 +11,8 @@ const filesToCopy = [
     "src/manifest.json",
     "src/options.html",
     "src/options.css",
+    "src/prompt-picker.html",
+    "src/prompt-picker.css",
     "src/sidepanel.html",
     "src/sidepanel.css",
     "src/rules.json",

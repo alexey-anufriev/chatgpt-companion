@@ -28,6 +28,7 @@ import type {
  */
 const MENU_PARENT_ID = "discuss-in-chatgpt";
 const MENU_TEMPLATE_PREFIX = "discuss-in-chatgpt-template-";
+const COMMAND_OPEN_PROMPT_PICKER = "open-prompt-picker";
 const DEFAULT_PROMPT_TEMPLATE_NAME = "Default";
 const ORIGINAL_LANGUAGE_LABEL = "Original language";
 
@@ -104,6 +105,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     void handleContextMenuClick(info, tab, menuItemId);
 });
 
+chrome.commands.onCommand.addListener((command, tab) => {
+    if (command !== COMMAND_OPEN_PROMPT_PICKER) {
+        return;
+    }
+
+    void openPromptPicker(tab).catch((error) => {
+        console.error("[chatgpt-companion] prompt picker open failed", error);
+    });
+});
+
 /**
  * Keeps prompt-template context menu items aligned with settings.
  */
@@ -131,7 +142,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 /**
  * Handles extension settings actions.
  */
-chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefined, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefined, sender, sendResponse) => {
     switch (message?.type) {
         case "clear-data-and-cache":
             void clearDataAndCache()
@@ -173,6 +184,12 @@ chrome.runtime.onMessage.addListener((message: Partial<RuntimeMessage> | undefin
             void deleteSession(message)
                 .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
                 .catch((error) => sendErrorResponse("deleteSession failed", error, sendResponse));
+            return true;
+
+        case "prompt-picker-selected":
+            void handlePromptPickerSelection(message, sender.tab)
+                .then(() => sendResponse({ ok: true } satisfies RuntimeResponse))
+                .catch((error) => sendErrorResponse("promptPickerSelected failed", error, sendResponse));
             return true;
 
         default:
@@ -458,6 +475,31 @@ function openDiscussionPanel(tabId: number): void {
 }
 
 /**
+ * Injects the prompt picker content script into the active page and asks it to
+ * show the overlay for the current templates.
+ */
+async function openPromptPicker(tab?: chrome.tabs.Tab): Promise<void> {
+    if (!tab?.id) {
+        throw new Error("Prompt picker requires an active tab");
+    }
+
+    const promptTemplates = (await getPromptTemplates()).map((promptTemplate) => ({
+        id: promptTemplate.id,
+        name: promptTemplate.name
+    }));
+
+    await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["prompt-picker.js"]
+    });
+
+    await chrome.tabs.sendMessage(tab.id, {
+        type: "show-prompt-picker",
+        promptTemplates
+    });
+}
+
+/**
  * Restores a tab's existing discussion session or creates one from the context
  * menu click when none is stored yet.
  */
@@ -721,6 +763,49 @@ async function startNewDiscussion(message: Partial<RuntimeMessage>): Promise<voi
     }
 
     await clearDiscussionMismatch(message.tabId);
+}
+
+/**
+ * Starts the normal discussion flow from a template chosen in the prompt picker.
+ */
+async function handlePromptPickerSelection(
+    message: Partial<RuntimeMessage>,
+    tab?: chrome.tabs.Tab
+): Promise<void> {
+    if (
+        message.type !== "prompt-picker-selected" ||
+        typeof message.requestedPromptTemplateId !== "string"
+    ) {
+        throw new Error("Prompt picker request is missing prompt template");
+    }
+
+    if (!tab?.id) {
+        throw new Error("Prompt picker request is missing tab");
+    }
+
+    openDiscussionPanel(tab.id);
+
+    const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
+    const preferredLanguage = await getPreferredLanguage();
+    const selectionText = message.selectionText ?? "";
+    const existingDiscussion = await getDiscussionForTab(tab.id);
+    const requestedSourceUrl = tab.url ?? "";
+
+    if (existingDiscussion) {
+        await handleExistingDiscussionLanguage(
+            tab.id,
+            selectionText,
+            existingDiscussion,
+            promptTemplate,
+            getRequestedResponseLanguage(promptTemplate, preferredLanguage),
+            undefined,
+            existingDiscussion.source.url !== requestedSourceUrl || existingDiscussion.source.selection !== selectionText
+        );
+        return;
+    }
+
+    await clearDiscussionMismatch(tab.id);
+    await createDiscussionFromTab(tab, selectionText, promptTemplate);
 }
 
 /**

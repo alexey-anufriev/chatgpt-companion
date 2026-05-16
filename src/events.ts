@@ -45,6 +45,14 @@ export type RuntimeMessage =
         type: "delete-session";
         /** extension discussion session id to delete */
         sessionId: string;
+    }
+    | {
+        /** create or continue a discussion from the page prompt picker */
+        type: "prompt-picker-selected";
+        /** prompt template id chosen in the injected picker */
+        requestedPromptTemplateId: string;
+        /** selected page text captured before the picker opened */
+        selectionText: string;
     };
 
 /**

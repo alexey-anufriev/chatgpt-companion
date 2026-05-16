@@ -19,6 +19,14 @@
     "page": "options.html",
     "open_in_tab": true
   },
+  "commands": {
+    "open-prompt-picker": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S"
+      },
+      "description": "Open prompt template picker"
+    }
+  },
   "permissions": [
     "contextMenus",
     "sidePanel",
@@ -60,5 +68,16 @@
         "path": "rules.json"
       }
     ]
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "prompt-picker.html",
+        "prompt-picker.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }
