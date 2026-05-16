@@ -1,27 +1,27 @@
 import {
     DEFAULT_PROMPT_TEMPLATE,
     getDefaultPromptTemplates
-} from "./prompts.js";
+} from "../prompts.js";
 import {
     hasSyncedSettings,
     normalizePreferredChatMode,
     normalizePreferredLanguage,
     normalizePreferredSendingMode,
     SYNC_SETTING_KEYS
-} from "./settings.js";
+} from "../settings.js";
 import type {
     PreferredChatMode,
     PreferredSendingMode,
     PromptTemplate,
     State
-} from "./settings.js";
+} from "../settings.js";
 import type {
     RuntimeMessage,
     RuntimeResponse
-} from "./events.js";
+} from "../events.js";
 import type {
     DiscussionState
-} from "./context.js";
+} from "../context.js";
 
 const OPTIONS_NEW_PROMPT_TEMPLATE = [
     "Hi, I’d like to discuss the following content.",
@@ -720,7 +720,7 @@ function openSidePanelForTab(tabId: number): void {
 
     void chrome.sidePanel.setOptions({
         tabId,
-        path: `sidepanel.html?tabId=${tabId}`,
+        path: `sidepanel/index.html?tabId=${tabId}`,
         enabled: true
     }).catch((error) => {
         console.error("[chatgpt-companion] side panel configuration failed", error);

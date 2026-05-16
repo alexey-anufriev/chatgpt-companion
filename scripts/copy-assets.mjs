@@ -1,5 +1,5 @@
 import { cpSync, mkdirSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -9,12 +9,12 @@ mkdirSync(distDir, { recursive: true });
 
 const filesToCopy = [
     "src/manifest.json",
-    "src/options.html",
-    "src/options.css",
-    "src/prompt-picker.html",
-    "src/prompt-picker.css",
-    "src/sidepanel.html",
-    "src/sidepanel.css",
+    "src/options/index.html",
+    "src/options/index.css",
+    "src/prompt-picker/index.html",
+    "src/prompt-picker/index.css",
+    "src/sidepanel/index.html",
+    "src/sidepanel/index.css",
     "src/rules.json",
     "src/icons/icon_16.png",
     "src/icons/icon_32.png",
@@ -23,5 +23,9 @@ const filesToCopy = [
 ];
 
 for (const relativePath of filesToCopy) {
-    cpSync(resolve(rootDir, relativePath), resolve(distDir, basename(relativePath)));
+    const sourcePath = resolve(rootDir, relativePath);
+    const outputPath = resolve(distDir, relative("src", relativePath));
+
+    mkdirSync(dirname(outputPath), { recursive: true });
+    cpSync(sourcePath, outputPath);
 }

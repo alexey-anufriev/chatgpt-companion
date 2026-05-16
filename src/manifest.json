@@ -4,19 +4,19 @@
   "version": "0.1.0",
   "description": "Understand, analyze, and discuss any webpage with ChatGPT in one click.",
   "icons": {
-    "16": "icon_16.png",
-    "32": "icon_32.png",
-    "48": "icon_48.png",
-    "128": "icon_128.png"
+    "16": "icons/icon_16.png",
+    "32": "icons/icon_32.png",
+    "48": "icons/icon_48.png",
+    "128": "icons/icon_128.png"
   },
   "action": {
     "default_icon": {
-      "16": "icon_16.png",
-      "32": "icon_32.png"
+      "16": "icons/icon_16.png",
+      "32": "icons/icon_32.png"
     }
   },
   "options_ui": {
-    "page": "options.html",
+    "page": "options/index.html",
     "open_in_tab": true
   },
   "commands": {
@@ -72,8 +72,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "prompt-picker.html",
-        "prompt-picker.css"
+        "prompt-picker/index.html",
+        "prompt-picker/index.css"
       ],
       "matches": [
         "<all_urls>"

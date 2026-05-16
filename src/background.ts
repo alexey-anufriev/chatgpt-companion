@@ -446,7 +446,7 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
     try {
         await chrome.sidePanel.setOptions({
             tabId,
-            path: `sidepanel.html?tabId=${tabId}`,
+            path: `sidepanel/index.html?tabId=${tabId}`,
             enabled: true
         });
     } catch (error) {
@@ -488,7 +488,7 @@ async function openPromptPicker(tab?: chrome.tabs.Tab): Promise<void> {
 
     await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ["prompt-picker.js"]
+        files: ["prompt-picker/index.js"]
     });
 
     await chrome.tabs.sendMessage(tab.id, {

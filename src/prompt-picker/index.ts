@@ -50,10 +50,10 @@
 
         const stylesheet = document.createElement("link");
         stylesheet.rel = "stylesheet";
-        stylesheet.href = chrome.runtime.getURL("prompt-picker.css");
+        stylesheet.href = chrome.runtime.getURL("prompt-picker/index.css");
 
         const template = document.createElement("template");
-        const markupResponse = await fetch(chrome.runtime.getURL("prompt-picker.html"));
+        const markupResponse = await fetch(chrome.runtime.getURL("prompt-picker/index.html"));
         template.innerHTML = await markupResponse.text();
         const content = template.content.cloneNode(true) as DocumentFragment;
         const backdrop = content.querySelector<HTMLDivElement>(".backdrop");

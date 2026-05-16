@@ -1,17 +1,17 @@
 import type {
     RuntimeMessage,
     RuntimeResponse
-} from "./events.js";
+} from "../events.js";
 import type {
     State
-} from "./settings.js";
+} from "../settings.js";
 import {
     normalizePreferredChatMode
-} from "./settings.js";
+} from "../settings.js";
 import type {
     DiscussionMismatch,
     DiscussionState
-} from "./context.js";
+} from "../context.js";
 
 const CHATGPT_BASE_URL = "https://chatgpt.com/";
 const CHATGPT_TEMPORARY_URL = "https://chatgpt.com/?temporary-chat=true";
