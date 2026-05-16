@@ -3,10 +3,12 @@ import {
     getDefaultPromptTemplates
 } from "./prompts.js";
 import {
+    DEFAULT_PREFERRED_CHAT_MODE,
     DEFAULT_PREFERRED_LANGUAGE,
     SYNC_SETTING_KEYS
 } from "./settings.js";
 import type {
+    PreferredChatMode,
     PromptTemplate,
     State
 } from "./settings.js";
@@ -110,7 +112,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         createContextMenus();
     }
 
-    if (areaName === "sync" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
+    if (
+        areaName === "sync" &&
+        (changes["preferredLanguage"] || changes["preferredChatMode"] || changes["promptTemplates"])
+    ) {
         void pullCloudSettingsToLocal()
             .then((didPull) => {
                 if (didPull) {
@@ -211,6 +216,7 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
 
     await chrome.storage.local.set({
         preferredLanguage: normalizePreferredLanguage(cloudSettings.preferredLanguage),
+        preferredChatMode: normalizePreferredChatMode(cloudSettings.preferredChatMode),
         promptTemplates: normalizePromptTemplates(cloudSettings.promptTemplates)
     });
 
@@ -221,7 +227,9 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
  * Returns whether cloud storage contains extension settings to pull.
  */
 function hasCloudSettings(cloudSettings: State): boolean {
-    return typeof cloudSettings.preferredLanguage === "string" || Array.isArray(cloudSettings.promptTemplates);
+    return typeof cloudSettings.preferredLanguage === "string" ||
+        typeof cloudSettings.preferredChatMode === "string" ||
+        Array.isArray(cloudSettings.promptTemplates);
 }
 
 /**
@@ -952,6 +960,10 @@ function normalizePreferredLanguage(value: unknown): string {
     }
 
     return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
+}
+
+function normalizePreferredChatMode(value: unknown): PreferredChatMode {
+    return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
 }
 
 /**

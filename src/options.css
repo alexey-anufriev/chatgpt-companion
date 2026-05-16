@@ -48,7 +48,8 @@ h1 {
     font-size: 12px;
 }
 
-.preferences input {
+.preferences input,
+.preferences select {
     width: 100%;
     box-sizing: border-box;
     border: 1px solid #c7cedb;
@@ -60,6 +61,7 @@ h1 {
 }
 
 .preferences input:focus,
+.preferences select:focus,
 .promptTemplate input:focus,
 .promptTemplate textarea:focus {
     border-color: #2563eb;

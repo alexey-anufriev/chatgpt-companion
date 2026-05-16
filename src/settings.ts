@@ -4,6 +4,9 @@ import type {
 } from "./context.js";
 
 export const DEFAULT_PREFERRED_LANGUAGE = "English";
+export const DEFAULT_PREFERRED_CHAT_MODE = "normal";
+
+export type PreferredChatMode = "normal" | "temporary";
 
 /**
  * User-editable prompt template stored in extension settings.
@@ -31,6 +34,8 @@ export type State = {
     clearAllDiscussionDraftsStamp?: number;
     /** preferred response language used by preferred-language templates */
     preferredLanguage?: string;
+    /** preferred ChatGPT entry mode for new side panel loads */
+    preferredChatMode?: PreferredChatMode;
     /** stored prompt templates that override the hardcoded default */
     promptTemplates?: PromptTemplate[];
     /** whether extension settings should mirror to chrome.storage.sync */
@@ -42,5 +47,6 @@ export type State = {
 export const SYNC_SETTING_KEYS: (keyof State)[] = [
     "cloudSyncEnabled",
     "preferredLanguage",
+    "preferredChatMode",
     "promptTemplates"
 ];

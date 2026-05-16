@@ -24,6 +24,13 @@
         <label for="preferredLanguage">Preferred language</label>
         <p class="sectionDescription">Used by prompt templates that include the preferred language macro.</p>
         <input id="preferredLanguage" type="text" autocomplete="off" />
+
+        <label for="preferredChatMode">Preferred chat mode</label>
+        <p class="sectionDescription">Used when opening ChatGPT without a saved conversation URL.</p>
+        <select id="preferredChatMode">
+            <option value="normal">Normal chat</option>
+            <option value="temporary">Temporary chat</option>
+        </select>
     </section>
 
     <section class="promptTemplates">

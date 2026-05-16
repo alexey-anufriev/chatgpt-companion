@@ -3,7 +3,11 @@ import type {
     RuntimeResponse
 } from "./events.js";
 import type {
+    PreferredChatMode,
     State
+} from "./settings.js";
+import {
+    DEFAULT_PREFERRED_CHAT_MODE
 } from "./settings.js";
 import type {
     DiscussionMismatch,
@@ -11,6 +15,7 @@ import type {
 } from "./context.js";
 
 const CHATGPT_BASE_URL = "https://chatgpt.com/";
+const CHATGPT_TEMPORARY_URL = "https://chatgpt.com/?temporary-chat=true";
 
 const sourceTitleEl = document.getElementById("sourceTitle") as HTMLDivElement | null;
 const sourceUrlEl = document.getElementById("sourceUrl") as HTMLDivElement | null;
@@ -89,7 +94,7 @@ function attachStorageListener(): void {
             return;
         }
 
-        if (changes["discussions"] || changes["tabSessionIds"]) {
+        if (changes["discussions"] || changes["tabSessionIds"] || changes["preferredChatMode"]) {
             await renderSource();
             await syncIframeSession();
         }
@@ -396,9 +401,11 @@ async function syncIframeSession(): Promise<void> {
     const sessionId = data.tabSessionIds?.[String(panelTabId)];
 
     if (!sessionId) {
-        if (currentIframeSessionId !== null) {
+        const chatUrl = await getPreferredChatGptUrl();
+
+        if (currentIframeSessionId !== null || chatgptFrame.src !== chatUrl) {
             currentIframeSessionId = null;
-            chatgptFrame.src = CHATGPT_BASE_URL;
+            chatgptFrame.src = chatUrl;
         }
 
         return;
@@ -411,7 +418,7 @@ async function syncIframeSession(): Promise<void> {
     }
 
     currentIframeSessionId = sessionId;
-    chatgptFrame.src = buildChatUrl(sessionId, data.discussions?.[sessionId]?.chatUrl);
+    chatgptFrame.src = await buildChatUrl(sessionId, data.discussions?.[sessionId]?.chatUrl);
 }
 
 /**
@@ -421,10 +428,21 @@ async function syncIframeSession(): Promise<void> {
  * id. It lets the ChatGPT content script identify which discussion entry in
  * chrome.storage.local belongs to this iframe load.
  */
-function buildChatUrl(sessionId: string, chatUrl?: string): string {
-    const url = new URL(chatUrl || CHATGPT_BASE_URL);
+async function buildChatUrl(sessionId: string, chatUrl?: string): Promise<string> {
+    const url = new URL(chatUrl || await getPreferredChatGptUrl());
     url.hash = `dwc_session=${encodeURIComponent(sessionId)}`;
     return url.toString();
+}
+
+async function getPreferredChatGptUrl(): Promise<string> {
+    const storage = (await chrome.storage.local.get("preferredChatMode")) as State;
+    return normalizePreferredChatMode(storage.preferredChatMode) === "temporary"
+        ? CHATGPT_TEMPORARY_URL
+        : CHATGPT_BASE_URL;
+}
+
+function normalizePreferredChatMode(value: unknown): PreferredChatMode {
+    return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
 }
 
 /**
