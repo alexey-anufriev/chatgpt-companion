@@ -55,3 +55,26 @@ export const SYNC_SETTING_KEYS: (keyof State)[] = [
     "preferredChatMode",
     "promptTemplates"
 ];
+
+export function normalizePreferredLanguage(value: unknown): string {
+    if (typeof value !== "string") {
+        return DEFAULT_PREFERRED_LANGUAGE;
+    }
+
+    return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
+}
+
+export function normalizePreferredSendingMode(value: unknown): PreferredSendingMode {
+    return value === "auto" ? "auto" : DEFAULT_PREFERRED_SENDING_MODE;
+}
+
+export function normalizePreferredChatMode(value: unknown): PreferredChatMode {
+    return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
+}
+
+export function hasSyncedSettings(state: State): boolean {
+    return typeof state.preferredLanguage === "string" ||
+        typeof state.preferredSendingMode === "string" ||
+        typeof state.preferredChatMode === "string" ||
+        Array.isArray(state.promptTemplates);
+}

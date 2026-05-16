@@ -3,11 +3,10 @@ import type {
     RuntimeResponse
 } from "./events.js";
 import type {
-    PreferredChatMode,
     State
 } from "./settings.js";
 import {
-    DEFAULT_PREFERRED_CHAT_MODE
+    normalizePreferredChatMode
 } from "./settings.js";
 import type {
     DiscussionMismatch,
@@ -439,10 +438,6 @@ async function getPreferredChatGptUrl(): Promise<string> {
     return normalizePreferredChatMode(storage.preferredChatMode) === "temporary"
         ? CHATGPT_TEMPORARY_URL
         : CHATGPT_BASE_URL;
-}
-
-function normalizePreferredChatMode(value: unknown): PreferredChatMode {
-    return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
 }
 
 /**

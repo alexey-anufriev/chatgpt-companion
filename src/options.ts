@@ -3,9 +3,10 @@ import {
     getDefaultPromptTemplates
 } from "./prompts.js";
 import {
-    DEFAULT_PREFERRED_CHAT_MODE,
-    DEFAULT_PREFERRED_LANGUAGE,
-    DEFAULT_PREFERRED_SENDING_MODE,
+    hasSyncedSettings,
+    normalizePreferredChatMode,
+    normalizePreferredLanguage,
+    normalizePreferredSendingMode,
     SYNC_SETTING_KEYS
 } from "./settings.js";
 import type {
@@ -49,10 +50,13 @@ const sessionsListEl = document.getElementById("sessionsList") as HTMLDivElement
 const sessionCountEl = document.getElementById("sessionCount") as HTMLSpanElement | null;
 
 type SessionEntry = [string, DiscussionState];
+type OptionsPreferences = {
+    preferredLanguage: string;
+    preferredSendingMode: PreferredSendingMode;
+    preferredChatMode: PreferredChatMode;
+};
 
-let savedPreferredLanguage = DEFAULT_PREFERRED_LANGUAGE;
-let savedPreferredSendingMode: PreferredSendingMode = DEFAULT_PREFERRED_SENDING_MODE;
-let savedPreferredChatMode: PreferredChatMode = DEFAULT_PREFERRED_CHAT_MODE;
+let savedPreferences = normalizeOptionsPreferences({});
 let savedPromptTemplates: PromptTemplate[] = getDefaultPromptTemplates();
 let savedCloudSyncEnabled = false;
 let isLoadingSettings = false;
@@ -166,42 +170,22 @@ async function loadSettings(): Promise<void> {
 
         savedCloudSyncEnabled = storage.cloudSyncEnabled === true;
         renderCloudSyncButton();
-        renderPreferredLanguage(storage.preferredLanguage);
-        renderPreferredSendingMode(storage.preferredSendingMode);
-        renderPreferredChatMode(storage.preferredChatMode);
+        renderPreferences(storage);
         renderPromptTemplates(storage.promptTemplates);
     } finally {
         isLoadingSettings = false;
     }
 }
 
-function renderPreferredLanguage(preferredLanguage: unknown): void {
-    if (!preferredLanguageInput) {
+function renderPreferences(state: Pick<State, "preferredLanguage" | "preferredSendingMode" | "preferredChatMode">): void {
+    if (!preferredLanguageInput || !preferredSendingModeSelect || !preferredChatModeSelect) {
         return;
     }
 
-    savedPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguage);
-    preferredLanguageInput.value = savedPreferredLanguage;
-    updateSaveButtonState();
-}
-
-function renderPreferredSendingMode(preferredSendingMode: unknown): void {
-    if (!preferredSendingModeSelect) {
-        return;
-    }
-
-    savedPreferredSendingMode = normalizeOptionsPreferredSendingMode(preferredSendingMode);
-    preferredSendingModeSelect.value = savedPreferredSendingMode;
-    updateSaveButtonState();
-}
-
-function renderPreferredChatMode(preferredChatMode: unknown): void {
-    if (!preferredChatModeSelect) {
-        return;
-    }
-
-    savedPreferredChatMode = normalizeOptionsPreferredChatMode(preferredChatMode);
-    preferredChatModeSelect.value = savedPreferredChatMode;
+    savedPreferences = normalizeOptionsPreferences(state);
+    preferredLanguageInput.value = savedPreferences.preferredLanguage;
+    preferredSendingModeSelect.value = savedPreferences.preferredSendingMode;
+    preferredChatModeSelect.value = savedPreferences.preferredChatMode;
     updateSaveButtonState();
 }
 
@@ -231,9 +215,11 @@ async function saveSettings(): Promise<void> {
         return;
     }
 
-    const nextPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguageInput.value);
-    const nextPreferredSendingMode = normalizeOptionsPreferredSendingMode(preferredSendingModeSelect.value);
-    const nextPreferredChatMode = normalizeOptionsPreferredChatMode(preferredChatModeSelect.value);
+    const nextPreferences = readPreferenceControls();
+    if (!nextPreferences) {
+        return;
+    }
+
     const nextPromptTemplates = readPromptTemplateEditors();
 
     isSavingSettings = true;
@@ -242,27 +228,19 @@ async function saveSettings(): Promise<void> {
 
     try {
         await chrome.storage.local.set({
-            preferredLanguage: nextPreferredLanguage,
-            preferredSendingMode: nextPreferredSendingMode,
-            preferredChatMode: nextPreferredChatMode,
+            ...nextPreferences,
             promptTemplates: nextPromptTemplates
         });
 
-        savedPreferredLanguage = nextPreferredLanguage;
-        savedPreferredSendingMode = nextPreferredSendingMode;
-        savedPreferredChatMode = nextPreferredChatMode;
+        savedPreferences = nextPreferences;
         savedPromptTemplates = nextPromptTemplates;
-        preferredLanguageInput.value = nextPreferredLanguage;
-        preferredSendingModeSelect.value = nextPreferredSendingMode;
-        preferredChatModeSelect.value = nextPreferredChatMode;
+        renderPreferences(nextPreferences);
         renderPromptTemplates(nextPromptTemplates);
 
         if (savedCloudSyncEnabled) {
             try {
                 await pushOptionsCloudSettings(
-                    nextPreferredLanguage,
-                    nextPreferredSendingMode,
-                    nextPreferredChatMode,
+                    nextPreferences,
                     nextPromptTemplates
                 );
                 setStatus("Settings saved and queued for cloud sync.");
@@ -311,7 +289,7 @@ async function enableCloudSync(): Promise<void> {
 
         const warning = isProfileSignedIn ? "" : " Chrome profile is not signed in, so settings may stay local.";
 
-        if (hasOptionsCloudSettings(cloudSettings)) {
+        if (hasSyncedSettings(cloudSettings)) {
             await applyOptionsCloudSettingsToLocal(cloudSettings);
             setStatus(`Cloud sync enabled. Remote settings loaded.${warning}`);
         } else {
@@ -392,7 +370,7 @@ function setStatus(message: string, autoClear = true): void {
 async function pullOptionsCloudSettingsToLocal(): Promise<void> {
     const cloudSettings = await readOptionsCloudSettings();
 
-    if (!cloudSettings.cloudSyncEnabled && !hasOptionsCloudSettings(cloudSettings)) {
+    if (!cloudSettings.cloudSyncEnabled && !hasSyncedSettings(cloudSettings)) {
         return;
     }
 
@@ -401,31 +379,18 @@ async function pullOptionsCloudSettingsToLocal(): Promise<void> {
 
 async function applyOptionsCloudSettingsToLocal(cloudSettings: State): Promise<void> {
     await chrome.storage.local.set({
-        preferredLanguage: normalizeOptionsPreferredLanguage(cloudSettings.preferredLanguage),
-        preferredSendingMode: normalizeOptionsPreferredSendingMode(cloudSettings.preferredSendingMode),
-        preferredChatMode: normalizeOptionsPreferredChatMode(cloudSettings.preferredChatMode),
+        ...normalizeOptionsPreferences(cloudSettings),
         promptTemplates: normalizeOptionsPromptTemplates(cloudSettings.promptTemplates)
     });
 }
 
-function hasOptionsCloudSettings(cloudSettings: State): boolean {
-    return typeof cloudSettings.preferredLanguage === "string" ||
-        typeof cloudSettings.preferredSendingMode === "string" ||
-        typeof cloudSettings.preferredChatMode === "string" ||
-        Array.isArray(cloudSettings.promptTemplates);
-}
-
 async function pushOptionsCloudSettings(
-    preferredLanguage: string,
-    preferredSendingMode: PreferredSendingMode,
-    preferredChatMode: PreferredChatMode,
+    preferences: OptionsPreferences,
     promptTemplates: PromptTemplate[]
 ): Promise<void> {
     await chrome.storage.sync.set({
         cloudSyncEnabled: true,
-        preferredLanguage,
-        preferredSendingMode,
-        preferredChatMode,
+        ...preferences,
         promptTemplates
     });
 }
@@ -533,14 +498,7 @@ async function requestClearDataAndCache(): Promise<void> {
     setStatus("Clearing data...", false);
 
     try {
-        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
-            type: "clear-data-and-cache"
-        });
-
-        if (!response?.ok) {
-            throw new Error(response?.error || "Clear operation failed");
-        }
-
+        await sendRuntimeRequest({ type: "clear-data-and-cache" }, "Clear operation failed");
         setStatus("Data and cache cleared.");
         await loadSettings();
         await renderPersistedSessions();
@@ -706,15 +664,10 @@ async function requestDeleteSession(sessionId: string, button: HTMLButtonElement
     setStatus("Deleting session...", false);
 
     try {
-        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+        await sendRuntimeRequest({
             type: "delete-session",
             sessionId
-        });
-
-        if (!response?.ok) {
-            throw new Error(response?.error || "Delete session failed");
-        }
-
+        }, "Delete session failed");
         setStatus("Session deleted.");
         await renderPersistedSessions();
     } catch (error) {
@@ -727,13 +680,7 @@ async function requestDeleteSession(sessionId: string, button: HTMLButtonElement
 
 async function requestSyncSessionTabs(): Promise<void> {
     try {
-        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
-            type: "sync-session-tabs"
-        });
-
-        if (!response?.ok) {
-            throw new Error(response?.error || "Session tab sync failed");
-        }
+        await sendRuntimeRequest({ type: "sync-session-tabs" }, "Session tab sync failed");
     } catch (error) {
         console.error("[chatgpt-companion] session tab sync failed", error);
     }
@@ -744,14 +691,10 @@ async function requestFocusSessionTab(sessionId: string, tabId: number, button: 
     openSidePanelForTab(tabId);
 
     try {
-        const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>({
+        await sendRuntimeRequest({
             type: "focus-session-tab",
             sessionId
-        });
-
-        if (!response?.ok) {
-            throw new Error(response?.error || "Tab focus failed");
-        }
+        }, "Tab focus failed");
     } catch (error) {
         console.error("[chatgpt-companion] focus session tab failed", error);
         setStatus(error instanceof Error ? error.message : "Tab is no longer open.");
@@ -759,6 +702,15 @@ async function requestFocusSessionTab(sessionId: string, tabId: number, button: 
     } finally {
         button.disabled = false;
     }
+}
+
+async function sendRuntimeRequest(message: RuntimeMessage, fallbackError: string): Promise<RuntimeResponse> {
+    const response = await chrome.runtime.sendMessage<RuntimeMessage, RuntimeResponse>(message);
+    if (!response?.ok) {
+        throw new Error(response?.error || fallbackError);
+    }
+
+    return response;
 }
 
 function openSidePanelForTab(tabId: number): void {
@@ -785,20 +737,36 @@ function getMappedTabIds(sessionId: string, tabSessionIds: Record<string, string
         .map(([tabId]) => tabId);
 }
 
-function normalizeOptionsPreferredLanguage(value: unknown): string {
-    if (typeof value !== "string") {
-        return DEFAULT_PREFERRED_LANGUAGE;
+function normalizeOptionsPreferences(
+    state: {
+        preferredLanguage?: unknown;
+        preferredSendingMode?: unknown;
+        preferredChatMode?: unknown;
+    }
+): OptionsPreferences {
+    return {
+        preferredLanguage: normalizePreferredLanguage(state.preferredLanguage),
+        preferredSendingMode: normalizePreferredSendingMode(state.preferredSendingMode),
+        preferredChatMode: normalizePreferredChatMode(state.preferredChatMode)
+    };
+}
+
+function readPreferenceControls(): OptionsPreferences | null {
+    if (!preferredLanguageInput || !preferredSendingModeSelect || !preferredChatModeSelect) {
+        return null;
     }
 
-    return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
+    return normalizeOptionsPreferences({
+        preferredLanguage: preferredLanguageInput.value,
+        preferredSendingMode: preferredSendingModeSelect.value,
+        preferredChatMode: preferredChatModeSelect.value
+    });
 }
 
-function normalizeOptionsPreferredSendingMode(value: unknown): PreferredSendingMode {
-    return value === "auto" ? "auto" : DEFAULT_PREFERRED_SENDING_MODE;
-}
-
-function normalizeOptionsPreferredChatMode(value: unknown): PreferredChatMode {
-    return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
+function arePreferencesEqual(left: OptionsPreferences, right: OptionsPreferences): boolean {
+    return left.preferredLanguage === right.preferredLanguage &&
+        left.preferredSendingMode === right.preferredSendingMode &&
+        left.preferredChatMode === right.preferredChatMode;
 }
 
 function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
@@ -822,23 +790,17 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
 }
 
 function updateSaveButtonState(): void {
-    if (!preferredLanguageInput || !preferredSendingModeSelect || !preferredChatModeSelect || !saveSettingsBtn) {
+    if (!saveSettingsBtn) {
         return;
     }
 
-    const currentPreferredLanguage = normalizeOptionsPreferredLanguage(preferredLanguageInput.value);
-    const currentPreferredSendingMode = normalizeOptionsPreferredSendingMode(preferredSendingModeSelect.value);
-    const currentPreferredChatMode = normalizeOptionsPreferredChatMode(preferredChatModeSelect.value);
+    const currentPreferences = readPreferenceControls();
     const promptTemplatesChanged = serializePromptTemplates(readPromptTemplateEditors()) !==
         serializePromptTemplates(savedPromptTemplates);
 
     saveSettingsBtn.disabled = isSavingSettings ||
-        (
-            currentPreferredLanguage === savedPreferredLanguage &&
-            currentPreferredSendingMode === savedPreferredSendingMode &&
-            currentPreferredChatMode === savedPreferredChatMode &&
-            !promptTemplatesChanged
-        );
+        !currentPreferences ||
+        (arePreferencesEqual(currentPreferences, savedPreferences) && !promptTemplatesChanged);
 }
 
 function serializePromptTemplates(promptTemplates: PromptTemplate[]): string {

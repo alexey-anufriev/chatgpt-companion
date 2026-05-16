@@ -3,14 +3,13 @@ import {
     getDefaultPromptTemplates
 } from "./prompts.js";
 import {
-    DEFAULT_PREFERRED_CHAT_MODE,
-    DEFAULT_PREFERRED_LANGUAGE,
-    DEFAULT_PREFERRED_SENDING_MODE,
+    hasSyncedSettings,
+    normalizePreferredChatMode,
+    normalizePreferredLanguage,
+    normalizePreferredSendingMode,
     SYNC_SETTING_KEYS
 } from "./settings.js";
 import type {
-    PreferredChatMode,
-    PreferredSendingMode,
     PromptTemplate,
     State
 } from "./settings.js";
@@ -258,7 +257,7 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
 
     const cloudSettings = (await chrome.storage.sync.get(SYNC_SETTING_KEYS)) as State;
 
-    if (!cloudSettings.cloudSyncEnabled && !hasCloudSettings(cloudSettings)) {
+    if (!cloudSettings.cloudSyncEnabled && !hasSyncedSettings(cloudSettings)) {
         return false;
     }
 
@@ -270,16 +269,6 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
     });
 
     return true;
-}
-
-/**
- * Returns whether cloud storage contains extension settings to pull.
- */
-function hasCloudSettings(cloudSettings: State): boolean {
-    return typeof cloudSettings.preferredLanguage === "string" ||
-        typeof cloudSettings.preferredSendingMode === "string" ||
-        typeof cloudSettings.preferredChatMode === "string" ||
-        Array.isArray(cloudSettings.promptTemplates);
 }
 
 /**
@@ -524,9 +513,25 @@ async function handleContextMenuClick(
     openDiscussionPanel(tab.id);
 
     const promptTemplate = await getMenuPromptTemplate(menuItemId);
+    await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, info.selectionText ?? "", info.linkUrl);
+}
+
+/**
+ * Reuses an existing tab discussion when possible or creates a new one from the
+ * selected template and source.
+ */
+async function openOrUpdateDiscussionFromTemplate(
+    tab: chrome.tabs.Tab,
+    promptTemplate: PromptTemplate,
+    selectionText: string,
+    requestedLinkUrl?: string
+): Promise<void> {
+    if (!tab.id) {
+        return;
+    }
+
     const preferredLanguage = await getPreferredLanguage();
-    const selectionText = info.selectionText ?? "";
-    const requestedSourceUrl = info.linkUrl ?? tab.url ?? "";
+    const requestedSourceUrl = requestedLinkUrl ?? tab.url ?? "";
     const existingDiscussion = await getDiscussionForTab(tab.id);
 
     if (existingDiscussion) {
@@ -536,15 +541,16 @@ async function handleContextMenuClick(
             existingDiscussion,
             promptTemplate,
             getRequestedResponseLanguage(promptTemplate, preferredLanguage),
-            info.linkUrl,
+            requestedLinkUrl,
             existingDiscussion.source.url !== requestedSourceUrl || existingDiscussion.source.selection !== selectionText
         );
         return;
     }
 
     await clearDiscussionMismatch(tab.id);
-    if (info.linkUrl) {
-        await createDiscussionFromLink(tab, info.linkUrl, selectionText, promptTemplate);
+
+    if (requestedLinkUrl) {
+        await createDiscussionFromLink(tab, requestedLinkUrl, selectionText, promptTemplate);
         return;
     }
 
@@ -795,26 +801,7 @@ async function handlePromptPickerSelection(
     openDiscussionPanel(tab.id);
 
     const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
-    const preferredLanguage = await getPreferredLanguage();
-    const selectionText = message.selectionText ?? "";
-    const existingDiscussion = await getDiscussionForTab(tab.id);
-    const requestedSourceUrl = tab.url ?? "";
-
-    if (existingDiscussion) {
-        await handleExistingDiscussionLanguage(
-            tab.id,
-            selectionText,
-            existingDiscussion,
-            promptTemplate,
-            getRequestedResponseLanguage(promptTemplate, preferredLanguage),
-            undefined,
-            existingDiscussion.source.url !== requestedSourceUrl || existingDiscussion.source.selection !== selectionText
-        );
-        return;
-    }
-
-    await clearDiscussionMismatch(tab.id);
-    await createDiscussionFromTab(tab, selectionText, promptTemplate);
+    await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, message.selectionText ?? "");
 }
 
 /**
@@ -1153,25 +1140,6 @@ async function getPromptTemplates(): Promise<PromptTemplate[]> {
 async function getPromptTemplateById(promptTemplateId: string): Promise<PromptTemplate> {
     const promptTemplates = await getPromptTemplates();
     return promptTemplates.find((promptTemplate) => promptTemplate.id === promptTemplateId) ?? promptTemplates[0];
-}
-
-/**
- * Converts stored or user-entered language values into one usable language.
- */
-function normalizePreferredLanguage(value: unknown): string {
-    if (typeof value !== "string") {
-        return DEFAULT_PREFERRED_LANGUAGE;
-    }
-
-    return value.trim() || DEFAULT_PREFERRED_LANGUAGE;
-}
-
-function normalizePreferredSendingMode(value: unknown): PreferredSendingMode {
-    return value === "auto" ? "auto" : DEFAULT_PREFERRED_SENDING_MODE;
-}
-
-function normalizePreferredChatMode(value: unknown): PreferredChatMode {
-    return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
 }
 
 /**
