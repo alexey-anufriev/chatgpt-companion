@@ -17,6 +17,7 @@ export const DEFAULT_PROMPT_TEMPLATE = [
     "- Identify the main idea",
     "- Highlight what is actually important",
     "- Point out weak or questionable parts",
+    "- Is it worth spending the time to get familiar with the full content?",
     "Use the language of the original material for your response."
 ].join("\n");
 
@@ -35,6 +36,7 @@ export const DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
     "- Identify the main idea",
     "- Highlight what is actually important",
     "- Point out weak or questionable parts",
+    "- Is it worth spending the time to get familiar with the full content?",
     "Use {preferred_language} for your response."
 ].join("\n");
 
@@ -49,6 +51,7 @@ export const SHORT_SUMMARY_PROMPT_TEMPLATE = [
     "{/if}",
     "",
     "Do not analyze or critique it.",
+    "Advice: is it worth spending the time to get familiar with the full content?",
     "Use the language of the original material for your response."
 ].join("\n");
 
@@ -63,6 +66,7 @@ export const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "{/if}",
     "",
     "Do not analyze or critique it.",
+    "Advice: is it worth spending the time to get familiar with the full content?",
     "Use {preferred_language} for your response."
 ].join("\n");
 
