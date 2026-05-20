@@ -606,7 +606,9 @@ function createSessionRow(
 
     const chatUrl = document.createElement("a");
     chatUrl.href = discussion.chatUrl || "#";
-    chatUrl.textContent = discussion.chatUrl || "Chat URL not saved yet";
+    chatUrl.textContent = discussion.chatUrl || (
+        discussion.temporary ? "Temporary chat URL is not saved" : "Chat URL not saved yet"
+    );
     chatUrl.target = "_blank";
     chatUrl.rel = "noreferrer";
     if (!discussion.chatUrl) {
