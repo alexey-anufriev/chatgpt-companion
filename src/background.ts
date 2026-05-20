@@ -89,7 +89,8 @@ chrome.action.onClicked.addListener((tab) => {
         return;
     }
 
-    void openDiscussionPanel(tab.id);
+    openDiscussionPanel(tab.id);
+    void clearTemporaryDiscussionForTab(tab.id);
 });
 
 /**
@@ -339,6 +340,8 @@ async function restoreMappingsAndConfigurePanels(): Promise<void> {
  * Rebuilds tab-session mappings after Chrome restores tabs with new ids.
  */
 async function restoreDiscussionMappingsForOpenTabs(): Promise<Record<string, string>> {
+    await clearPersistedTemporaryDiscussions();
+
     const storage = (await chrome.storage.local.get([
         "discussions",
         "tabSessionIds"
@@ -377,7 +380,9 @@ async function restoreDiscussionMappingsForOpenTabs(): Promise<Record<string, st
         }
 
         const entry = discussionEntries.find(([sessionId, discussion]) => {
-            return !assignedSessionIds.has(sessionId) && discussion.source.url === tab.url;
+            return !discussion.temporary &&
+                !assignedSessionIds.has(sessionId) &&
+                discussion.source.url === tab.url;
         });
 
         if (!entry) {
@@ -423,7 +428,9 @@ async function restoreDiscussionMappingForTab(tabId: number, tabUrl?: string): P
 
     const usedSessionIds = new Set(Object.values(storage.tabSessionIds ?? {}));
     const entry = Object.entries(storage.discussions ?? {}).find(([sessionId, discussion]) => {
-        return !usedSessionIds.has(sessionId) && discussion.source.url === tabUrl;
+        return !discussion.temporary &&
+            !usedSessionIds.has(sessionId) &&
+            discussion.source.url === tabUrl;
     });
 
     if (!entry) {
@@ -511,6 +518,7 @@ async function handleContextMenuClick(
     }
 
     openDiscussionPanel(tab.id);
+    await clearTemporaryDiscussionForTab(tab.id);
 
     const promptTemplate = await getMenuPromptTemplate(menuItemId);
     await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, info.selectionText ?? "", info.linkUrl);
@@ -799,6 +807,7 @@ async function handlePromptPickerSelection(
     }
 
     openDiscussionPanel(tab.id);
+    await clearTemporaryDiscussionForTab(tab.id);
 
     const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
     await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, message.selectionText ?? "");
@@ -935,6 +944,7 @@ async function createDiscussionFromSource(
     promptTemplate: PromptTemplate
 ): Promise<boolean> {
     const preferredLanguage = await getPreferredLanguage();
+    const preferredChatMode = await getPreferredChatMode();
     const prompt = buildPrompt(source, promptTemplate, preferredLanguage);
     const sessionId = crypto.randomUUID();
     const storage = (await chrome.storage.local.get([
@@ -955,6 +965,7 @@ async function createDiscussionFromSource(
         stamp: Date.now(),
         source,
         consumed: false,
+        temporary: preferredChatMode === "temporary",
         responseLanguage: getRequestedResponseLanguage(promptTemplate, preferredLanguage),
         promptTemplateId: promptTemplate.id,
         promptTemplateName: promptTemplate.name
@@ -1007,13 +1018,24 @@ async function updateContinuationPrompt(
 }
 
 /**
- * Removes the tab-to-session mapping while preserving the discussion for restore.
+ * Removes the tab-to-session mapping. Normal discussions remain available for
+ * restore; temporary discussions are discarded.
  */
 async function detachDiscussionFromTab(tabId: number): Promise<void> {
-    const storage = (await chrome.storage.local.get("tabSessionIds")) as State;
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds",
+        "discussionMismatches"
+    ])) as State;
     const tabKey = String(tabId);
+    const sessionId = storage.tabSessionIds?.[tabKey];
 
-    if (!storage.tabSessionIds?.[tabKey]) {
+    if (!sessionId) {
+        return;
+    }
+
+    if (storage.discussions?.[sessionId]?.temporary) {
+        await clearTemporaryDiscussionForTab(tabId);
         return;
     }
 
@@ -1021,6 +1043,83 @@ async function detachDiscussionFromTab(tabId: number): Promise<void> {
     delete tabSessionIds[tabKey];
 
     await chrome.storage.local.set({ tabSessionIds });
+}
+
+/**
+ * Removes a tab's temporary discussion because it cannot be restored after the
+ * side panel document is gone.
+ */
+async function clearTemporaryDiscussionForTab(tabId: number): Promise<void> {
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds",
+        "discussionMismatches"
+    ])) as State;
+    const tabKey = String(tabId);
+    const sessionId = storage.tabSessionIds?.[tabKey];
+    const discussion = sessionId ? storage.discussions?.[sessionId] : undefined;
+
+    if (!sessionId || !discussion?.temporary) {
+        return;
+    }
+
+    const discussions = { ...(storage.discussions ?? {}) };
+    const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+    const discussionMismatches = { ...(storage.discussionMismatches ?? {}) };
+
+    delete discussions[sessionId];
+    delete tabSessionIds[tabKey];
+    delete discussionMismatches[tabKey];
+
+    await chrome.storage.local.set({
+        discussions,
+        tabSessionIds,
+        discussionMismatches,
+        closeDiscussionSessionId: sessionId
+    });
+}
+
+/**
+ * Removes any temporary records that survived an extension/browser restart.
+ */
+async function clearPersistedTemporaryDiscussions(): Promise<void> {
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds",
+        "discussionMismatches"
+    ])) as State;
+    const temporarySessionIds = new Set(
+        Object.entries(storage.discussions ?? {})
+            .filter(([, discussion]) => discussion.temporary)
+            .map(([sessionId]) => sessionId)
+    );
+
+    if (temporarySessionIds.size === 0) {
+        return;
+    }
+
+    const discussions = { ...(storage.discussions ?? {}) };
+    const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+    const discussionMismatches = { ...(storage.discussionMismatches ?? {}) };
+
+    for (const sessionId of temporarySessionIds) {
+        delete discussions[sessionId];
+    }
+
+    for (const [tabId, sessionId] of Object.entries(tabSessionIds)) {
+        if (!temporarySessionIds.has(sessionId)) {
+            continue;
+        }
+
+        delete tabSessionIds[tabId];
+        delete discussionMismatches[tabId];
+    }
+
+    await chrome.storage.local.set({
+        discussions,
+        tabSessionIds,
+        discussionMismatches
+    });
 }
 
 /**
@@ -1124,6 +1223,14 @@ function applyPromptMacros(
 async function getPreferredLanguage(): Promise<string> {
     const storage = (await chrome.storage.local.get("preferredLanguage")) as State;
     return normalizePreferredLanguage(storage.preferredLanguage);
+}
+
+/**
+ * Returns the currently configured ChatGPT entry mode.
+ */
+async function getPreferredChatMode(): Promise<string> {
+    const storage = (await chrome.storage.local.get("preferredChatMode")) as State;
+    return normalizePreferredChatMode(storage.preferredChatMode);
 }
 
 /**

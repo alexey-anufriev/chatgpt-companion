@@ -24,6 +24,8 @@ export type DiscussionState = {
     consumed: boolean;
     /** ChatGPT conversation URL captured after ChatGPT creates a thread */
     chatUrl?: string;
+    /** whether this discussion is only valid while its side panel is open */
+    temporary?: boolean;
     /** response language requested when this discussion was created */
     responseLanguage: string;
     /** prompt template id used when this discussion was created */

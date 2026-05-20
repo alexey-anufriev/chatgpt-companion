@@ -167,6 +167,10 @@ async function rememberCurrentChatUrl(): Promise<void> {
         return;
     }
 
+    if (discussion.temporary) {
+        return;
+    }
+
     const chatUrl = `${location.origin}${location.pathname}${location.search}`;
     if (discussion.chatUrl === chatUrl) {
         return;

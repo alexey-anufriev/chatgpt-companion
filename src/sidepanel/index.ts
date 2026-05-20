@@ -109,6 +109,10 @@ function attachStorageListener(): void {
  * discussion session.
  */
 function attachEvents(): void {
+    window.addEventListener("pagehide", () => {
+        void discardPanelDiscussion(true, currentIframeSessionId);
+    });
+
     copyPromptBtn?.addEventListener("click", async () => {
         const discussion = await getPanelDiscussion();
         await navigator.clipboard.writeText(discussion?.prompt ?? "");
@@ -158,37 +162,57 @@ function attachEvents(): void {
     });
 
     closeBtn?.addEventListener("click", async () => {
-        if (panelTabId === null) {
-            return;
-        }
-
-        const storage = (await chrome.storage.local.get([
-            "discussions",
-            "tabSessionIds",
-            "discussionMismatches"
-        ])) as State;
-        const tabKey = String(panelTabId);
-        const sessionId = storage.tabSessionIds?.[tabKey];
-        const discussions = { ...(storage.discussions ?? {}) };
-        const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
-
-        if (sessionId) {
-            delete discussions[sessionId];
-            delete tabSessionIds[tabKey];
-        }
-
-        await chrome.storage.local.set({
-            discussions,
-            tabSessionIds,
-            discussionMismatches: removePanelDiscussionMismatch(storage.discussionMismatches),
-            closeDiscussionSessionId: sessionId
-        });
+        await discardPanelDiscussion(false, currentIframeSessionId);
 
         // give the content script a short window to observe closeDiscussionSessionId
         // and remove ChatGPT's transient draft before the panel tears down
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         window.close();
+    });
+}
+
+/**
+ * Removes this side panel's stored discussion. Temporary discussions are
+ * discarded on panel teardown because ChatGPT cannot restore them later.
+ */
+async function discardPanelDiscussion(temporaryOnly: boolean, expectedSessionId: string | null): Promise<void> {
+    if (panelTabId === null) {
+        return;
+    }
+
+    if (temporaryOnly && !expectedSessionId) {
+        return;
+    }
+
+    const storage = (await chrome.storage.local.get([
+        "discussions",
+        "tabSessionIds",
+        "discussionMismatches"
+    ])) as State;
+    const tabKey = String(panelTabId);
+    const sessionId = storage.tabSessionIds?.[tabKey];
+    const discussion = sessionId ? storage.discussions?.[sessionId] : undefined;
+
+    if (expectedSessionId && sessionId !== expectedSessionId) {
+        return;
+    }
+
+    if (!sessionId || !discussion || (temporaryOnly && !discussion.temporary)) {
+        return;
+    }
+
+    const discussions = { ...(storage.discussions ?? {}) };
+    const tabSessionIds = { ...(storage.tabSessionIds ?? {}) };
+
+    delete discussions[sessionId];
+    delete tabSessionIds[tabKey];
+
+    await chrome.storage.local.set({
+        discussions,
+        tabSessionIds,
+        discussionMismatches: removePanelDiscussionMismatch(storage.discussionMismatches),
+        closeDiscussionSessionId: sessionId
     });
 }
 
