@@ -516,7 +516,9 @@ function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = fals
         updateResetButtonState();
         actions.append(resetButton);
     }
-    actions.append(removeButton);
+    if (!defaultPromptTemplate) {
+        actions.append(removeButton);
+    }
     header.append(title, actions);
     body.append(nameInput, templateInput);
     row.append(header, body);
@@ -854,7 +856,9 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
         return getDefaultPromptTemplates();
     }
 
-    const promptTemplates = value
+    const defaultPromptTemplates = getDefaultPromptTemplates();
+    const defaultPromptTemplateIds = new Set(defaultPromptTemplates.map((promptTemplate) => promptTemplate.id));
+    const storedPromptTemplates = value
         .filter((promptTemplate): promptTemplate is PromptTemplate => {
             return typeof promptTemplate?.id === "string" &&
                 typeof promptTemplate?.name === "string" &&
@@ -867,6 +871,18 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
             name: promptTemplate.name.trim(),
             template: promptTemplate.template.trim()
         }));
+    const storedPromptTemplatesById = new Map(
+        storedPromptTemplates.map((promptTemplate) => [promptTemplate.id, promptTemplate])
+    );
+    const promptTemplates = defaultPromptTemplates.map((defaultPromptTemplate) => {
+        return storedPromptTemplatesById.get(defaultPromptTemplate.id) ?? defaultPromptTemplate;
+    });
+
+    for (const storedPromptTemplate of storedPromptTemplates) {
+        if (!defaultPromptTemplateIds.has(storedPromptTemplate.id)) {
+            promptTemplates.push(storedPromptTemplate);
+        }
+    }
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
 }

@@ -1255,7 +1255,9 @@ function normalizePromptTemplates(value: unknown): PromptTemplate[] {
         return getDefaultPromptTemplates();
     }
 
-    const promptTemplates = value
+    const defaultPromptTemplates = getDefaultPromptTemplates();
+    const defaultPromptTemplateIds = new Set(defaultPromptTemplates.map((template) => template.id));
+    const storedPromptTemplates = value
         .filter((template): template is PromptTemplate => {
             return typeof template?.id === "string" &&
                 typeof template?.name === "string" &&
@@ -1268,6 +1270,18 @@ function normalizePromptTemplates(value: unknown): PromptTemplate[] {
             name: template.name.trim(),
             template: template.template.trim()
         }));
+    const storedPromptTemplatesById = new Map(
+        storedPromptTemplates.map((template) => [template.id, template])
+    );
+    const promptTemplates = defaultPromptTemplates.map((defaultPromptTemplate) => {
+        return storedPromptTemplatesById.get(defaultPromptTemplate.id) ?? defaultPromptTemplate;
+    });
+
+    for (const storedPromptTemplate of storedPromptTemplates) {
+        if (!defaultPromptTemplateIds.has(storedPromptTemplate.id)) {
+            promptTemplates.push(storedPromptTemplate);
+        }
+    }
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
 }
