@@ -514,16 +514,16 @@ async function requestClearDataAndCache(): Promise<void> {
         return;
     }
 
-    if (!confirm("Clear all persisted sessions, mappings, drafts, and extension cache?")) {
+    if (!confirm("Clear all persisted sessions, tab mappings, and discussion drafts?")) {
         return;
     }
 
     clearDataBtn.disabled = true;
-    setStatus("Clearing data...", false);
+    setStatus("Clearing sessions...", false);
 
     try {
         await sendRuntimeRequest({ type: "clear-data-and-cache" }, "Clear operation failed");
-        setStatus("Data and cache cleared.");
+        setStatus("Sessions cleared.");
         await loadSettings();
         await renderPersistedSessions();
     } catch (error) {
