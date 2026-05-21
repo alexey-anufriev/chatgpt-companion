@@ -2,7 +2,7 @@ import type {
     PromptTemplate
 } from "./settings.js";
 
-export const DEFAULT_PROMPT_TEMPLATE = [
+export const PAGE_ANALYSIS_PROMPT_TEMPLATE = [
     "Hi, I’d like to discuss the following content.",
     "Title: {page_title}",
     "URL: {page_url}",
@@ -21,7 +21,7 @@ export const DEFAULT_PROMPT_TEMPLATE = [
     "Use the language of the original material for your response."
 ].join("\n");
 
-export const DEFAULT_TRANSLATED_PROMPT_TEMPLATE = [
+export const PAGE_ANALYSIS_TRANSLATED_PROMPT_TEMPLATE = [
     "Hi, I’d like to discuss the following content.",
     "Title: {page_title}",
     "URL: {page_url}",
@@ -72,14 +72,14 @@ export const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
 
 export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
     {
-        id: "default",
-        name: "Default",
-        template: DEFAULT_PROMPT_TEMPLATE
+        id: "page-analysis",
+        name: "Page Analysis",
+        template: PAGE_ANALYSIS_PROMPT_TEMPLATE
     },
     {
-        id: "default-translated",
-        name: "Default translated",
-        template: DEFAULT_TRANSLATED_PROMPT_TEMPLATE
+        id: "page-analysis-translated",
+        name: "Page Analysis translated",
+        template: PAGE_ANALYSIS_TRANSLATED_PROMPT_TEMPLATE
     },
     {
         id: "short-summary",

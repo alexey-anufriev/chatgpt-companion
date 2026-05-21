@@ -1,5 +1,4 @@
 import {
-    DEFAULT_PROMPT_TEMPLATE,
     getDefaultPromptTemplates
 } from "../prompts.js";
 import {
@@ -217,6 +216,12 @@ async function saveSettings(): Promise<void> {
 
     const nextPreferences = readPreferenceControls();
     if (!nextPreferences) {
+        return;
+    }
+
+    const promptTemplateValidationError = getPromptTemplateEditorValidationError();
+    if (promptTemplateValidationError) {
+        setStatus(promptTemplateValidationError);
         return;
     }
 
@@ -471,9 +476,8 @@ function readPromptTemplateEditors(): PromptTemplate[] {
 
     const promptTemplates = Array.from(promptTemplatesListEl.querySelectorAll<HTMLElement>(".promptTemplate"))
         .map((row) => {
-            const name = row.querySelector<HTMLInputElement>(".promptTemplateName")?.value.trim() || "Prompt";
-            const template = (row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value ?? "").trim() ||
-                DEFAULT_PROMPT_TEMPLATE;
+            const name = row.querySelector<HTMLInputElement>(".promptTemplateName")?.value.trim() ?? "";
+            const template = row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value.trim() ?? "";
 
             return {
                 id: row.dataset.templateId || crypto.randomUUID(),
@@ -483,6 +487,26 @@ function readPromptTemplateEditors(): PromptTemplate[] {
         });
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
+}
+
+function getPromptTemplateEditorValidationError(): string | null {
+    if (!promptTemplatesListEl) {
+        return null;
+    }
+
+    const rows = Array.from(promptTemplatesListEl.querySelectorAll<HTMLElement>(".promptTemplate"));
+    const invalidIndex = rows.findIndex((row) => {
+        const name = row.querySelector<HTMLInputElement>(".promptTemplateName")?.value.trim() ?? "";
+        const template = row.querySelector<HTMLTextAreaElement>(".promptTemplateText")?.value.trim() ?? "";
+
+        return !name || !template;
+    });
+
+    if (invalidIndex === -1) {
+        return null;
+    }
+
+    return `Prompt template ${invalidIndex + 1} needs both a name and prompt text.`;
 }
 
 async function requestClearDataAndCache(): Promise<void> {
@@ -780,12 +804,14 @@ function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
         .filter((promptTemplate): promptTemplate is PromptTemplate => {
             return typeof promptTemplate?.id === "string" &&
                 typeof promptTemplate?.name === "string" &&
-                typeof promptTemplate?.template === "string";
+                typeof promptTemplate?.template === "string" &&
+                promptTemplate.name.trim().length > 0 &&
+                promptTemplate.template.trim().length > 0;
         })
         .map((promptTemplate) => ({
-            id: promptTemplate.id,
-            name: promptTemplate.name.trim() || "Prompt",
-            template: promptTemplate.template.trim() || DEFAULT_PROMPT_TEMPLATE
+            id: promptTemplate.id.trim() || crypto.randomUUID(),
+            name: promptTemplate.name.trim(),
+            template: promptTemplate.template.trim()
         }));
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();

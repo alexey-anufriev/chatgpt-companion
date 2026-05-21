@@ -1,5 +1,4 @@
 import {
-    DEFAULT_PROMPT_TEMPLATE,
     getDefaultPromptTemplates
 } from "./prompts.js";
 import {
@@ -30,7 +29,6 @@ import type {
 const MENU_PARENT_ID = "discuss-in-chatgpt";
 const MENU_TEMPLATE_PREFIX = "discuss-in-chatgpt-template-";
 const COMMAND_OPEN_PROMPT_PICKER = "open-prompt-picker";
-const DEFAULT_PROMPT_TEMPLATE_NAME = "Default";
 const ORIGINAL_LANGUAGE_LABEL = "Original language";
 
 /**
@@ -1261,12 +1259,14 @@ function normalizePromptTemplates(value: unknown): PromptTemplate[] {
         .filter((template): template is PromptTemplate => {
             return typeof template?.id === "string" &&
                 typeof template?.name === "string" &&
-                typeof template?.template === "string";
+                typeof template?.template === "string" &&
+                template.name.trim().length > 0 &&
+                template.template.trim().length > 0;
         })
         .map((template) => ({
             id: template.id.trim() || crypto.randomUUID(),
-            name: template.name.trim() || DEFAULT_PROMPT_TEMPLATE_NAME,
-            template: template.template.trim() || DEFAULT_PROMPT_TEMPLATE
+            name: template.name.trim(),
+            template: template.template.trim()
         }));
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
