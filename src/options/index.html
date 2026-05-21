@@ -15,13 +15,18 @@
     <div class="settingsHeader">
         <h1>ChatGPT Companion Settings</h1>
         <div class="settingsActions">
-            <button id="shortcutSettingsBtn" type="button">Change Hotkey</button>
             <button id="cloudSyncBtn" type="button">Enable Cloud Sync</button>
             <button id="saveSettingsBtn" type="button" disabled>Save</button>
         </div>
     </div>
 
     <section class="preferences">
+        <label>Prompt picker hotkey</label>
+        <p id="shortcutHint" class="sectionDescription">Current hotkey: Ctrl+Shift+S</p>
+        <div>
+            <button id="shortcutSettingsBtn" type="button">Change Hotkey</button>
+        </div>
+
         <label for="preferredLanguage">Preferred language</label>
         <p class="sectionDescription">Used by prompt templates that include the preferred language macro.</p>
         <input id="preferredLanguage" type="text" autocomplete="off" />

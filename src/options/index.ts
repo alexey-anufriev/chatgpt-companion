@@ -39,6 +39,7 @@ const preferredLanguageInput = document.getElementById("preferredLanguage") as H
 const preferredSendingModeSelect = document.getElementById("preferredSendingMode") as HTMLSelectElement | null;
 const preferredChatModeSelect = document.getElementById("preferredChatMode") as HTMLSelectElement | null;
 const shortcutSettingsBtn = document.getElementById("shortcutSettingsBtn") as HTMLButtonElement | null;
+const shortcutHintEl = document.getElementById("shortcutHint") as HTMLSpanElement | null;
 const cloudSyncBtn = document.getElementById("cloudSyncBtn") as HTMLButtonElement | null;
 const saveSettingsBtn = document.getElementById("saveSettingsBtn") as HTMLButtonElement | null;
 const addPromptTemplateBtn = document.getElementById("addPromptTemplateBtn") as HTMLButtonElement | null;
@@ -71,6 +72,7 @@ if (
     !preferredSendingModeSelect ||
     !preferredChatModeSelect ||
     !shortcutSettingsBtn ||
+    !shortcutHintEl ||
     !cloudSyncBtn ||
     !saveSettingsBtn ||
     !addPromptTemplateBtn ||
@@ -138,7 +140,22 @@ if (
     });
 
     void loadSettings();
+    void renderShortcutHint();
     void renderPersistedSessions();
+}
+
+async function renderShortcutHint(): Promise<void> {
+    if (!shortcutHintEl) {
+        return;
+    }
+
+    try {
+        const commands = await chrome.commands.getAll();
+        const command = commands.find((item) => item.name === "open-prompt-picker");
+        shortcutHintEl.textContent = `Current hotkey: ${command?.shortcut || "not assigned"}`;
+    } catch (error) {
+        console.error("[chatgpt-companion] shortcut hint read failed", error);
+    }
 }
 
 async function openShortcutSettings(): Promise<void> {
