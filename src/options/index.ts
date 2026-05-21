@@ -107,11 +107,15 @@ if (
     });
 
     addPromptTemplateBtn.addEventListener("click", () => {
+        const customPromptTemplateGroup = promptTemplatesListEl.querySelector<HTMLElement>(
+            "[data-prompt-template-group='custom']"
+        );
+        customPromptTemplateGroup?.querySelector(".promptTemplateGroupEmpty")?.remove();
         addPromptTemplateEditor({
             id: crypto.randomUUID(),
             name: "New Prompt",
             template: OPTIONS_NEW_PROMPT_TEMPLATE
-        }, true);
+        }, true, customPromptTemplateGroup ?? promptTemplatesListEl);
         updateSaveButtonState();
     });
 
@@ -216,11 +220,55 @@ function renderPromptTemplates(promptTemplates: unknown): void {
     savedPromptTemplates = normalizeOptionsPromptTemplates(promptTemplates);
     promptTemplatesListEl.replaceChildren();
 
-    for (const promptTemplate of savedPromptTemplates) {
-        addPromptTemplateEditor(promptTemplate);
-    }
+    const defaultPromptTemplates = savedPromptTemplates.filter((promptTemplate) => {
+        return defaultPromptTemplatesById.has(promptTemplate.id);
+    });
+    const customPromptTemplates = savedPromptTemplates.filter((promptTemplate) => {
+        return !defaultPromptTemplatesById.has(promptTemplate.id);
+    });
+
+    appendPromptTemplateGroup(
+        "Default prompts",
+        defaultPromptTemplates,
+        "Default prompts are provided by the extension.",
+        "default"
+    );
+    appendPromptTemplateGroup("Custom prompts", customPromptTemplates, "No custom prompts yet.", "custom");
 
     updateSaveButtonState();
+}
+
+function appendPromptTemplateGroup(
+    title: string,
+    promptTemplates: PromptTemplate[],
+    emptyText: string,
+    groupId: string
+): void {
+    if (!promptTemplatesListEl) {
+        return;
+    }
+
+    const group = document.createElement("section");
+    group.className = "promptTemplateGroup";
+    group.dataset.promptTemplateGroup = groupId;
+
+    const heading = document.createElement("h3");
+    heading.className = "promptTemplateGroupTitle";
+    heading.textContent = title;
+    group.append(heading);
+
+    if (promptTemplates.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "promptTemplateGroupEmpty";
+        empty.textContent = emptyText;
+        group.append(empty);
+    }
+
+    for (const promptTemplate of promptTemplates) {
+        addPromptTemplateEditor(promptTemplate, false, group);
+    }
+
+    promptTemplatesListEl.append(group);
 }
 
 async function saveSettings(): Promise<void> {
@@ -424,8 +472,12 @@ async function readOptionsCloudSettings(): Promise<State> {
     return (await chrome.storage.sync.get(SYNC_SETTING_KEYS)) as State;
 }
 
-function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = false): void {
-    if (!promptTemplatesListEl) {
+function addPromptTemplateEditor(
+    promptTemplate: PromptTemplate,
+    expanded = false,
+    container: HTMLElement | null = promptTemplatesListEl
+): void {
+    if (!container) {
         return;
     }
 
@@ -522,7 +574,7 @@ function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = fals
     header.append(title, actions);
     body.append(nameInput, templateInput);
     row.append(header, body);
-    promptTemplatesListEl.append(row);
+    container.append(row);
 }
 
 function readPromptTemplateEditors(): PromptTemplate[] {
