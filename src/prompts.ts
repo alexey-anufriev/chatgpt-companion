@@ -41,7 +41,7 @@ export const PAGE_ANALYSIS_TRANSLATED_PROMPT_TEMPLATE = [
 ].join("\n");
 
 export const SHORT_SUMMARY_PROMPT_TEMPLATE = [
-    "Compact the following material into a short summary.",
+    "Turn the following material into a compact factual briefing.",
     "Title: {page_title}",
     "URL: {page_url}",
     "",
@@ -50,13 +50,16 @@ export const SHORT_SUMMARY_PROMPT_TEMPLATE = [
     "{selected_text}",
     "{/if}",
     "",
-    "Do not analyze or critique it.",
-    "Advice: is it worth spending the time to get familiar with the full content?",
+    "Avoid generic \"this article is about\" framing.",
+    "List the important concrete facts, claims, names, numbers, causes, outcomes, and examples.",
+    "Preserve the specific subject: say what happened, who or what is involved, why it matters, and any notable details.",
+    "Keep it short, but do not omit key points just to make it vague.",
+    "End with one sentence on whether the full content is worth reading and why.",
     "Use the language of the original material for your response."
 ].join("\n");
 
 export const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
-    "Compact the following material into a short summary.",
+    "Turn the following material into a compact factual briefing.",
     "Title: {page_title}",
     "URL: {page_url}",
     "",
@@ -65,8 +68,11 @@ export const SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE = [
     "{selected_text}",
     "{/if}",
     "",
-    "Do not analyze or critique it.",
-    "Advice: is it worth spending the time to get familiar with the full content?",
+    "Avoid generic \"this article is about\" framing.",
+    "List the important concrete facts, claims, names, numbers, causes, outcomes, and examples.",
+    "Preserve the specific subject: say what happened, who or what is involved, why it matters, and any notable details.",
+    "Keep it short, but do not omit key points just to make it vague.",
+    "End with one sentence on whether the full content is worth reading and why.",
     "Use {preferred_language} for your response."
 ].join("\n");
 
