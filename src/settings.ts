@@ -42,6 +42,8 @@ export type State = {
     preferredSendingMode?: PreferredSendingMode;
     /** stored prompt templates that override the hardcoded default */
     promptTemplates?: PromptTemplate[];
+    /** bundled prompt template ids hidden from action menus */
+    hiddenDefaultPromptTemplateIds?: string[];
     /** whether extension settings should mirror to chrome.storage.sync */
     cloudSyncEnabled?: boolean;
     /** source tab id to pending discussion mismatch prompt */
@@ -53,6 +55,7 @@ export const SYNC_SETTING_KEYS: (keyof State)[] = [
     "preferredLanguage",
     "preferredSendingMode",
     "preferredChatMode",
+    "hiddenDefaultPromptTemplateIds",
     "promptTemplates"
 ];
 
@@ -72,9 +75,18 @@ export function normalizePreferredChatMode(value: unknown): PreferredChatMode {
     return value === "temporary" ? "temporary" : DEFAULT_PREFERRED_CHAT_MODE;
 }
 
+export function normalizeHiddenDefaultPromptTemplateIds(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.filter((item): item is string => typeof item === "string");
+}
+
 export function hasSyncedSettings(state: State): boolean {
     return typeof state.preferredLanguage === "string" ||
         typeof state.preferredSendingMode === "string" ||
         typeof state.preferredChatMode === "string" ||
+        Array.isArray(state.hiddenDefaultPromptTemplateIds) ||
         Array.isArray(state.promptTemplates);
 }

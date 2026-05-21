@@ -3,6 +3,7 @@ import {
 } from "./prompts.js";
 import {
     hasSyncedSettings,
+    normalizeHiddenDefaultPromptTemplateIds,
     normalizePreferredChatMode,
     normalizePreferredLanguage,
     normalizePreferredSendingMode,
@@ -119,7 +120,14 @@ chrome.commands.onCommand.addListener((command, tab) => {
  * Keeps prompt-template context menu items aligned with settings.
  */
 chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === "local" && (changes["preferredLanguage"] || changes["promptTemplates"])) {
+    if (
+        areaName === "local" &&
+        (
+            changes["preferredLanguage"] ||
+            changes["hiddenDefaultPromptTemplateIds"] ||
+            changes["promptTemplates"]
+        )
+    ) {
         createContextMenus();
     }
 
@@ -129,6 +137,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
             changes["preferredLanguage"] ||
             changes["preferredSendingMode"] ||
             changes["preferredChatMode"] ||
+            changes["hiddenDefaultPromptTemplateIds"] ||
             changes["promptTemplates"]
         )
     ) {
@@ -264,6 +273,7 @@ async function pullCloudSettingsToLocal(): Promise<boolean> {
         preferredLanguage: normalizePreferredLanguage(cloudSettings.preferredLanguage),
         preferredSendingMode: normalizePreferredSendingMode(cloudSettings.preferredSendingMode),
         preferredChatMode: normalizePreferredChatMode(cloudSettings.preferredChatMode),
+        hiddenDefaultPromptTemplateIds: normalizeHiddenDefaultPromptTemplateIds(cloudSettings.hiddenDefaultPromptTemplateIds),
         promptTemplates: normalizePromptTemplates(cloudSettings.promptTemplates)
     });
 
@@ -1235,15 +1245,22 @@ async function getPreferredChatMode(): Promise<string> {
  * Returns stored prompt templates or the hardcoded default fallback.
  */
 async function getPromptTemplates(): Promise<PromptTemplate[]> {
-    const storage = (await chrome.storage.local.get("promptTemplates")) as State;
-    return normalizePromptTemplates(storage.promptTemplates);
+    const storage = (await chrome.storage.local.get([
+        "hiddenDefaultPromptTemplateIds",
+        "promptTemplates"
+    ])) as State;
+    return filterHiddenDefaultPromptTemplates(
+        normalizePromptTemplates(storage.promptTemplates),
+        storage.hiddenDefaultPromptTemplateIds
+    );
 }
 
 /**
  * Returns one prompt template by id or the current default template.
  */
 async function getPromptTemplateById(promptTemplateId: string): Promise<PromptTemplate> {
-    const promptTemplates = await getPromptTemplates();
+    const storage = (await chrome.storage.local.get("promptTemplates")) as State;
+    const promptTemplates = normalizePromptTemplates(storage.promptTemplates);
     return promptTemplates.find((promptTemplate) => promptTemplate.id === promptTemplateId) ?? promptTemplates[0];
 }
 
@@ -1284,6 +1301,18 @@ function normalizePromptTemplates(value: unknown): PromptTemplate[] {
     }
 
     return promptTemplates.length > 0 ? promptTemplates : getDefaultPromptTemplates();
+}
+
+function filterHiddenDefaultPromptTemplates(
+    promptTemplates: PromptTemplate[],
+    hiddenDefaultPromptTemplateIds: unknown
+): PromptTemplate[] {
+    const defaultPromptTemplateIds = new Set(getDefaultPromptTemplates().map((template) => template.id));
+    const hiddenTemplateIds = new Set(normalizeHiddenDefaultPromptTemplateIds(hiddenDefaultPromptTemplateIds));
+
+    return promptTemplates.filter((promptTemplate) => {
+        return !defaultPromptTemplateIds.has(promptTemplate.id) || !hiddenTemplateIds.has(promptTemplate.id);
+    });
 }
 
 /**

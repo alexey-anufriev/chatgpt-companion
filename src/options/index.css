@@ -121,6 +121,16 @@ h1 {
     border-color: #c7cedb;
 }
 
+.promptTemplate.hiddenPromptTemplate {
+    background: #f8fafc;
+}
+
+.promptTemplate.hiddenPromptTemplate .promptTemplateTitle::after {
+    content: " (hidden)";
+    color: #8b95a5;
+    font-weight: 500;
+}
+
 .promptTemplateHeader {
     display: flex;
     align-items: center;

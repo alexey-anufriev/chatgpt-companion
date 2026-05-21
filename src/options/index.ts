@@ -3,6 +3,7 @@ import {
 } from "../prompts.js";
 import {
     hasSyncedSettings,
+    normalizeHiddenDefaultPromptTemplateIds,
     normalizePreferredChatMode,
     normalizePreferredLanguage,
     normalizePreferredSendingMode,
@@ -54,6 +55,7 @@ type OptionsPreferences = {
     preferredLanguage: string;
     preferredSendingMode: PreferredSendingMode;
     preferredChatMode: PreferredChatMode;
+    hiddenDefaultPromptTemplateIds: string[];
 };
 
 let savedPreferences = normalizeOptionsPreferences({});
@@ -93,7 +95,6 @@ if (
     preferredChatModeSelect.addEventListener("change", () => {
         updateSaveButtonState();
     });
-
     saveSettingsBtn.addEventListener("click", () => {
         void saveSettings();
     });
@@ -135,6 +136,7 @@ if (
                 changes["preferredLanguage"] ||
                 changes["preferredSendingMode"] ||
                 changes["preferredChatMode"] ||
+                changes["hiddenDefaultPromptTemplateIds"] ||
                 changes["promptTemplates"] ||
                 changes["cloudSyncEnabled"]
             )
@@ -200,7 +202,9 @@ async function loadSettings(): Promise<void> {
     }
 }
 
-function renderPreferences(state: Pick<State, "preferredLanguage" | "preferredSendingMode" | "preferredChatMode">): void {
+function renderPreferences(
+    state: Pick<State, "preferredLanguage" | "preferredSendingMode" | "preferredChatMode" | "hiddenDefaultPromptTemplateIds">
+): void {
     if (!preferredLanguageInput || !preferredSendingModeSelect || !preferredChatModeSelect) {
         return;
     }
@@ -496,6 +500,7 @@ function addPromptTemplateEditor(
     const actions = document.createElement("div");
     actions.className = "promptTemplateActions";
     const defaultPromptTemplate = defaultPromptTemplatesById.get(promptTemplate.id);
+    const isDefaultPromptHidden = savedPreferences.hiddenDefaultPromptTemplateIds.includes(promptTemplate.id);
 
     const editButton = document.createElement("button");
     editButton.type = "button";
@@ -504,6 +509,9 @@ function addPromptTemplateEditor(
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.textContent = "Reset";
+
+    const visibilityButton = document.createElement("button");
+    visibilityButton.type = "button";
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -522,6 +530,16 @@ function addPromptTemplateEditor(
     templateInput.value = promptTemplate.template;
     templateInput.className = "promptTemplateText";
     templateInput.spellcheck = false;
+
+    const updateVisibilityButtonState = () => {
+        if (!defaultPromptTemplate) {
+            return;
+        }
+
+        const isHidden = row.dataset.defaultPromptHidden === "true";
+        visibilityButton.textContent = isHidden ? "Show" : "Hide";
+        row.classList.toggle("hiddenPromptTemplate", isHidden);
+    };
 
     const updateResetButtonState = () => {
         if (!defaultPromptTemplate) {
@@ -558,6 +576,15 @@ function addPromptTemplateEditor(
         updateResetButtonState();
         updateSaveButtonState();
     });
+    visibilityButton.addEventListener("click", () => {
+        if (!defaultPromptTemplate) {
+            return;
+        }
+
+        row.dataset.defaultPromptHidden = row.dataset.defaultPromptHidden === "true" ? "false" : "true";
+        updateVisibilityButtonState();
+        updateSaveButtonState();
+    });
     removeButton.addEventListener("click", () => {
         row.remove();
         updateSaveButtonState();
@@ -565,7 +592,10 @@ function addPromptTemplateEditor(
 
     actions.append(editButton);
     if (defaultPromptTemplate) {
+        row.dataset.defaultPromptHidden = isDefaultPromptHidden ? "true" : "false";
+        updateVisibilityButtonState();
         updateResetButtonState();
+        actions.append(visibilityButton);
         actions.append(resetButton);
     }
     if (!defaultPromptTemplate) {
@@ -876,12 +906,14 @@ function normalizeOptionsPreferences(
         preferredLanguage?: unknown;
         preferredSendingMode?: unknown;
         preferredChatMode?: unknown;
+        hiddenDefaultPromptTemplateIds?: unknown;
     }
 ): OptionsPreferences {
     return {
         preferredLanguage: normalizePreferredLanguage(state.preferredLanguage),
         preferredSendingMode: normalizePreferredSendingMode(state.preferredSendingMode),
-        preferredChatMode: normalizePreferredChatMode(state.preferredChatMode)
+        preferredChatMode: normalizePreferredChatMode(state.preferredChatMode),
+        hiddenDefaultPromptTemplateIds: normalizeHiddenDefaultPromptTemplateIds(state.hiddenDefaultPromptTemplateIds)
     };
 }
 
@@ -893,14 +925,38 @@ function readPreferenceControls(): OptionsPreferences | null {
     return normalizeOptionsPreferences({
         preferredLanguage: preferredLanguageInput.value,
         preferredSendingMode: preferredSendingModeSelect.value,
-        preferredChatMode: preferredChatModeSelect.value
+        preferredChatMode: preferredChatModeSelect.value,
+        hiddenDefaultPromptTemplateIds: readHiddenDefaultPromptTemplateIds()
     });
 }
 
 function arePreferencesEqual(left: OptionsPreferences, right: OptionsPreferences): boolean {
     return left.preferredLanguage === right.preferredLanguage &&
         left.preferredSendingMode === right.preferredSendingMode &&
-        left.preferredChatMode === right.preferredChatMode;
+        left.preferredChatMode === right.preferredChatMode &&
+        areStringArraysEqual(left.hiddenDefaultPromptTemplateIds, right.hiddenDefaultPromptTemplateIds);
+}
+
+function readHiddenDefaultPromptTemplateIds(): string[] {
+    if (!promptTemplatesListEl) {
+        return savedPreferences.hiddenDefaultPromptTemplateIds;
+    }
+
+    return Array.from(promptTemplatesListEl.querySelectorAll<HTMLElement>(".promptTemplate"))
+        .filter((row) => row.dataset.defaultPromptHidden === "true")
+        .map((row) => row.dataset.templateId)
+        .filter((templateId): templateId is string => {
+            return typeof templateId === "string" && defaultPromptTemplatesById.has(templateId);
+        });
+}
+
+function areStringArraysEqual(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+
+    const rightValues = new Set(right);
+    return left.every((value) => rightValues.has(value));
 }
 
 function normalizeOptionsPromptTemplates(value: unknown): PromptTemplate[] {
