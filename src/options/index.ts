@@ -57,6 +57,9 @@ type OptionsPreferences = {
 
 let savedPreferences = normalizeOptionsPreferences({});
 let savedPromptTemplates: PromptTemplate[] = getDefaultPromptTemplates();
+const defaultPromptTemplatesById = new Map(
+    getDefaultPromptTemplates().map((promptTemplate) => [promptTemplate.id, promptTemplate])
+);
 let savedCloudSyncEnabled = false;
 let isLoadingSettings = false;
 let isChangingCloudSync = false;
@@ -423,10 +426,15 @@ function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = fals
 
     const actions = document.createElement("div");
     actions.className = "promptTemplateActions";
+    const defaultPromptTemplate = defaultPromptTemplatesById.get(promptTemplate.id);
 
     const editButton = document.createElement("button");
     editButton.type = "button";
     editButton.textContent = expanded ? "Collapse" : "Edit";
+
+    const resetButton = document.createElement("button");
+    resetButton.type = "button";
+    resetButton.textContent = "Reset";
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -446,23 +454,52 @@ function addPromptTemplateEditor(promptTemplate: PromptTemplate, expanded = fals
     templateInput.className = "promptTemplateText";
     templateInput.spellcheck = false;
 
+    const updateResetButtonState = () => {
+        if (!defaultPromptTemplate) {
+            return;
+        }
+
+        resetButton.disabled = nameInput.value.trim() === defaultPromptTemplate.name &&
+            templateInput.value.trim() === defaultPromptTemplate.template;
+    };
+
     nameInput.addEventListener("input", () => {
         title.textContent = nameInput.value.trim() || "Prompt";
+        updateResetButtonState();
         updateSaveButtonState();
     });
     templateInput.addEventListener("input", () => {
+        updateResetButtonState();
         updateSaveButtonState();
     });
     editButton.addEventListener("click", () => {
         const isExpanded = row.classList.toggle("expanded");
         editButton.textContent = isExpanded ? "Collapse" : "Edit";
     });
+    resetButton.addEventListener("click", () => {
+        if (!defaultPromptTemplate) {
+            return;
+        }
+
+        nameInput.value = defaultPromptTemplate.name;
+        templateInput.value = defaultPromptTemplate.template;
+        title.textContent = defaultPromptTemplate.name;
+        row.classList.add("expanded");
+        editButton.textContent = "Collapse";
+        updateResetButtonState();
+        updateSaveButtonState();
+    });
     removeButton.addEventListener("click", () => {
         row.remove();
         updateSaveButtonState();
     });
 
-    actions.append(editButton, removeButton);
+    actions.append(editButton);
+    if (defaultPromptTemplate) {
+        updateResetButtonState();
+        actions.append(resetButton);
+    }
+    actions.append(removeButton);
     header.append(title, actions);
     body.append(nameInput, templateInput);
     row.append(header, body);
