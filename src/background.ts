@@ -295,7 +295,7 @@ async function createContextMenusAfterClear(): Promise<void> {
         chrome.contextMenus.create({
             id: `${MENU_TEMPLATE_PREFIX}${promptTemplateIndex}`,
             parentId: MENU_PARENT_ID,
-            title: `Using "${promptTemplate.name}" template`,
+            title: `Using "${promptTemplate.name}"`,
             contexts: ["page", "selection", "link"]
         });
     });
