@@ -13,11 +13,13 @@ export const PAGE_ANALYSIS_PROMPT_TEMPLATE = [
     "{/if}",
     "",
     "Please:",
-    "- Provide a concise summary",
-    "- Identify the main idea",
-    "- Highlight what is actually important",
-    "- Point out weak or questionable parts",
-    "- Is it worth spending the time to get familiar with the full content?",
+    "- Provide a concise but concrete summary",
+    "- Avoid generic \"this content is about\" phrasing; name the specific people, products, events, ideas, numbers, claims, and outcomes",
+    "- Identify the main idea and the supporting facts that make it meaningful",
+    "- Highlight what is actually important and why",
+    "- Point out weak, questionable, missing, or one-sided parts",
+    "- Explain what a reader should remember after closing the page",
+    "- Say whether it is worth spending the time to get familiar with the full content, and why",
     "Use the language of the original material for your response."
 ].join("\n");
 
@@ -32,11 +34,13 @@ export const PAGE_ANALYSIS_TRANSLATED_PROMPT_TEMPLATE = [
     "{/if}",
     "",
     "Please:",
-    "- Provide a concise summary",
-    "- Identify the main idea",
-    "- Highlight what is actually important",
-    "- Point out weak or questionable parts",
-    "- Is it worth spending the time to get familiar with the full content?",
+    "- Provide a concise but concrete summary",
+    "- Avoid generic \"this content is about\" phrasing; name the specific people, products, events, ideas, numbers, claims, and outcomes",
+    "- Identify the main idea and the supporting facts that make it meaningful",
+    "- Highlight what is actually important and why",
+    "- Point out weak, questionable, missing, or one-sided parts",
+    "- Explain what a reader should remember after closing the page",
+    "- Say whether it is worth spending the time to get familiar with the full content, and why",
     "Use {preferred_language} for your response."
 ].join("\n");
 
