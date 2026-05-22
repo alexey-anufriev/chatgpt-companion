@@ -93,7 +93,12 @@ function attachStorageListener(): void {
             return;
         }
 
-        if (changes["discussions"] || changes["tabSessionIds"] || changes["preferredChatMode"]) {
+        if (
+            changes["discussions"] ||
+            changes["tabSessionIds"] ||
+            changes["preferredChatMode"] ||
+            changes["pendingDiscussionTabIds"]
+        ) {
             await renderSource();
             await syncIframeSession();
         }
@@ -199,6 +204,12 @@ async function discardPanelDiscussion(temporaryOnly: boolean, expectedSessionId:
     }
 
     if (!sessionId || !discussion || (temporaryOnly && !discussion.temporary)) {
+        console.log(
+            `[chatgpt-companion] discard skipped panelTabId=${panelTabId} ` +
+            `temporaryOnly=${temporaryOnly} expectedSessionId=${expectedSessionId ?? ""} ` +
+            `sessionId=${sessionId ?? ""} hasDiscussion=${Boolean(discussion)} ` +
+            `temporary=${discussion?.temporary ?? false}`
+        );
         return;
     }
 
@@ -214,6 +225,10 @@ async function discardPanelDiscussion(temporaryOnly: boolean, expectedSessionId:
         discussionMismatches: removePanelDiscussionMismatch(storage.discussionMismatches),
         closeDiscussionSessionId: sessionId
     });
+    console.log(
+        `[chatgpt-companion] discard removed panelTabId=${panelTabId} ` +
+        `temporaryOnly=${temporaryOnly} sessionId=${sessionId}`
+    );
 }
 
 /**
@@ -419,11 +434,17 @@ async function syncIframeSession(): Promise<void> {
 
     const data = (await chrome.storage.local.get([
         "discussions",
+        "pendingDiscussionTabIds",
         "tabSessionIds"
     ])) as State;
     const sessionId = data.tabSessionIds?.[String(panelTabId)];
+    const isDiscussionPending = Boolean(data.pendingDiscussionTabIds?.[String(panelTabId)]);
 
     if (!sessionId) {
+        if (isDiscussionPending) {
+            return;
+        }
+
         const chatUrl = await getPreferredChatGptUrl();
 
         if (currentIframeSessionId !== null || chatgptFrame.src !== chatUrl) {

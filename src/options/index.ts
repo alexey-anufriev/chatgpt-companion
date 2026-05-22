@@ -131,6 +131,8 @@ if (
 
         if (
             !isLoadingSettings &&
+            !isSavingSettings &&
+            !isChangingCloudSync &&
             areaName === "local" &&
             (
                 changes["preferredLanguage"] ||
@@ -141,7 +143,7 @@ if (
                 changes["cloudSyncEnabled"]
             )
         ) {
-            void loadSettings();
+            void loadSettings({ pullCloud: false });
         }
     });
 
@@ -175,7 +177,7 @@ async function openShortcutSettings(): Promise<void> {
     }
 }
 
-async function loadSettings(): Promise<void> {
+async function loadSettings(options: { pullCloud?: boolean } = {}): Promise<void> {
     if (isLoadingSettings) {
         return;
     }
@@ -183,9 +185,10 @@ async function loadSettings(): Promise<void> {
     isLoadingSettings = true;
 
     try {
+        const shouldPullCloud = options.pullCloud ?? true;
         const syncState = (await chrome.storage.local.get("cloudSyncEnabled")) as State;
 
-        if (syncState.cloudSyncEnabled) {
+        if (shouldPullCloud && syncState.cloudSyncEnabled) {
             await pullOptionsCloudSettingsToLocal().catch((error) => {
                 console.error("[chatgpt-companion] cloud settings pull failed", error);
             });
@@ -304,6 +307,12 @@ async function saveSettings(): Promise<void> {
     setStatus("Saving settings...", false);
 
     try {
+        console.log("[chatgpt-companion] saving settings", {
+            promptTemplateCount: nextPromptTemplates.length,
+            promptTemplateIds: nextPromptTemplates.map((promptTemplate) => promptTemplate.id),
+            cloudSyncEnabled: savedCloudSyncEnabled
+        });
+
         await chrome.storage.local.set({
             ...nextPreferences,
             promptTemplates: nextPromptTemplates
@@ -320,6 +329,10 @@ async function saveSettings(): Promise<void> {
                     nextPreferences,
                     nextPromptTemplates
                 );
+                console.log("[chatgpt-companion] cloud settings pushed", {
+                    promptTemplateCount: nextPromptTemplates.length,
+                    promptTemplateIds: nextPromptTemplates.map((promptTemplate) => promptTemplate.id)
+                });
                 setStatus("Settings saved and queued for cloud sync.");
             } catch (error) {
                 console.error("[chatgpt-companion] cloud settings save failed", error);

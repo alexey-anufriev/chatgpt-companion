@@ -48,6 +48,8 @@ export type State = {
     cloudSyncEnabled?: boolean;
     /** source tab id to pending discussion mismatch prompt */
     discussionMismatches?: Record<string, DiscussionMismatch>;
+    /** source tab ids with a prompt creation flow currently in progress */
+    pendingDiscussionTabIds?: Record<string, number>;
 };
 
 export const SYNC_SETTING_KEYS: (keyof State)[] = [

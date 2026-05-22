@@ -477,14 +477,42 @@ async function ensurePanelConfiguredForTab(tabId: number): Promise<void> {
  */
 function openDiscussionPanel(tabId: number): void {
     chrome.sidePanel.open({ tabId }).catch((error) => {
-        console.error("[chatgpt-companion] side panel open failed", {
+        const message = getErrorMessage(error);
+        console.error(`[chatgpt-companion] side panel open failed: ${message}`, {
             tabId,
-            message: getErrorMessage(error),
             error
         });
     });
+}
 
-    void ensurePanelConfiguredForTab(tabId);
+/**
+ * Marks a tab as waiting for a newly collected discussion prompt.
+ */
+function markDiscussionPending(tabId: number): void {
+    void updatePendingDiscussionTab(tabId, true).catch((error) => {
+        console.error("[chatgpt-companion] pending discussion mark failed", error);
+    });
+}
+
+/**
+ * Clears a tab's prompt-creation pending marker.
+ */
+async function clearDiscussionPending(tabId: number): Promise<void> {
+    await updatePendingDiscussionTab(tabId, false);
+}
+
+async function updatePendingDiscussionTab(tabId: number, isPending: boolean): Promise<void> {
+    const storage = (await chrome.storage.local.get("pendingDiscussionTabIds")) as State;
+    const pendingDiscussionTabIds = { ...(storage.pendingDiscussionTabIds ?? {}) };
+    const tabKey = String(tabId);
+
+    if (isPending) {
+        pendingDiscussionTabIds[tabKey] = Date.now();
+    } else {
+        delete pendingDiscussionTabIds[tabKey];
+    }
+
+    await chrome.storage.local.set({ pendingDiscussionTabIds });
 }
 
 /**
@@ -525,11 +553,17 @@ async function handleContextMenuClick(
         return;
     }
 
+    markDiscussionPending(tab.id);
     openDiscussionPanel(tab.id);
-    await clearTemporaryDiscussionForTab(tab.id);
 
-    const promptTemplate = await getMenuPromptTemplate(menuItemId);
-    await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, info.selectionText ?? "", info.linkUrl);
+    try {
+        await clearTemporaryDiscussionForTab(tab.id);
+
+        const promptTemplate = await getMenuPromptTemplate(menuItemId);
+        await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, info.selectionText ?? "", info.linkUrl);
+    } finally {
+        await clearDiscussionPending(tab.id);
+    }
 }
 
 /**
@@ -604,6 +638,7 @@ async function clearDataAndCache(): Promise<void> {
         "discussions",
         "tabSessionIds",
         "discussionMismatches",
+        "pendingDiscussionTabIds",
         "closeDiscussionSessionId",
         "clearAllDiscussionDraftsStamp"
     ]);
@@ -814,11 +849,17 @@ async function handlePromptPickerSelection(
         throw new Error("Prompt picker request is missing tab");
     }
 
+    markDiscussionPending(tab.id);
     openDiscussionPanel(tab.id);
-    await clearTemporaryDiscussionForTab(tab.id);
 
-    const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
-    await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, message.selectionText ?? "");
+    try {
+        await clearTemporaryDiscussionForTab(tab.id);
+
+        const promptTemplate = await getPromptTemplateById(message.requestedPromptTemplateId);
+        await openOrUpdateDiscussionFromTemplate(tab, promptTemplate, message.selectionText ?? "");
+    } finally {
+        await clearDiscussionPending(tab.id);
+    }
 }
 
 /**
@@ -988,7 +1029,13 @@ async function createDiscussionFromSource(
         closeDiscussionSessionId: undefined
     });
 
-    console.log("[chatgpt-companion] prompt saved", { sessionId, tabId });
+    console.log(
+        `[chatgpt-companion] prompt saved tabId=${tabId} ` +
+        `sessionId=${sessionId} templateId=${promptTemplate.id} ` +
+        `templateName=${JSON.stringify(promptTemplate.name)} ` +
+        `promptLength=${prompt.length} sourceUrl=${JSON.stringify(source.url)} ` +
+        `previousSessionId=${previousSessionId ?? ""}`
+    );
     return true;
 }
 
@@ -1096,9 +1143,17 @@ async function clearPersistedTemporaryDiscussions(): Promise<void> {
         "tabSessionIds",
         "discussionMismatches"
     ])) as State;
+    const openTabIds = new Set(await getOpenTabIds());
+    const openTemporarySessionIds = new Set(
+        Object.entries(storage.tabSessionIds ?? {})
+            .filter(([tabId]) => openTabIds.has(Number(tabId)))
+            .map(([, sessionId]) => sessionId)
+    );
     const temporarySessionIds = new Set(
         Object.entries(storage.discussions ?? {})
-            .filter(([, discussion]) => discussion.temporary)
+            .filter(([sessionId, discussion]) => {
+                return discussion.temporary && !openTemporarySessionIds.has(sessionId);
+            })
             .map(([sessionId]) => sessionId)
     );
 
@@ -1358,7 +1413,19 @@ function escapeHtml(text: string): string {
  * Converts unknown caught values into useful log text.
  */
 function getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    if (typeof error === "object" && error !== null) {
+        try {
+            return JSON.stringify(error);
+        } catch {
+            return String(error);
+        }
+    }
+
+    return String(error);
 }
 
 /**
