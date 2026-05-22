@@ -307,12 +307,6 @@ async function saveSettings(): Promise<void> {
     setStatus("Saving settings...", false);
 
     try {
-        console.log("[chatgpt-companion] saving settings", {
-            promptTemplateCount: nextPromptTemplates.length,
-            promptTemplateIds: nextPromptTemplates.map((promptTemplate) => promptTemplate.id),
-            cloudSyncEnabled: savedCloudSyncEnabled
-        });
-
         await chrome.storage.local.set({
             ...nextPreferences,
             promptTemplates: nextPromptTemplates
@@ -329,10 +323,6 @@ async function saveSettings(): Promise<void> {
                     nextPreferences,
                     nextPromptTemplates
                 );
-                console.log("[chatgpt-companion] cloud settings pushed", {
-                    promptTemplateCount: nextPromptTemplates.length,
-                    promptTemplateIds: nextPromptTemplates.map((promptTemplate) => promptTemplate.id)
-                });
                 setStatus("Settings saved and queued for cloud sync.");
             } catch (error) {
                 console.error("[chatgpt-companion] cloud settings save failed", error);

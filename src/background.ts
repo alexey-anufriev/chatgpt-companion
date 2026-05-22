@@ -1029,13 +1029,6 @@ async function createDiscussionFromSource(
         closeDiscussionSessionId: undefined
     });
 
-    console.log(
-        `[chatgpt-companion] prompt saved tabId=${tabId} ` +
-        `sessionId=${sessionId} templateId=${promptTemplate.id} ` +
-        `templateName=${JSON.stringify(promptTemplate.name)} ` +
-        `promptLength=${prompt.length} sourceUrl=${JSON.stringify(source.url)} ` +
-        `previousSessionId=${previousSessionId ?? ""}`
-    );
     return true;
 }
 

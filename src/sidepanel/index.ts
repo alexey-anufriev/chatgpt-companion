@@ -204,12 +204,6 @@ async function discardPanelDiscussion(temporaryOnly: boolean, expectedSessionId:
     }
 
     if (!sessionId || !discussion || (temporaryOnly && !discussion.temporary)) {
-        console.log(
-            `[chatgpt-companion] discard skipped panelTabId=${panelTabId} ` +
-            `temporaryOnly=${temporaryOnly} expectedSessionId=${expectedSessionId ?? ""} ` +
-            `sessionId=${sessionId ?? ""} hasDiscussion=${Boolean(discussion)} ` +
-            `temporary=${discussion?.temporary ?? false}`
-        );
         return;
     }
 
@@ -225,10 +219,6 @@ async function discardPanelDiscussion(temporaryOnly: boolean, expectedSessionId:
         discussionMismatches: removePanelDiscussionMismatch(storage.discussionMismatches),
         closeDiscussionSessionId: sessionId
     });
-    console.log(
-        `[chatgpt-companion] discard removed panelTabId=${panelTabId} ` +
-        `temporaryOnly=${temporaryOnly} sessionId=${sessionId}`
-    );
 }
 
 /**
