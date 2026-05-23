@@ -1,8 +1,4 @@
 import { rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const distDir = resolve(rootDir, "dist");
+import { distDir } from "./utils.mjs";
 
 rmSync(distDir, { recursive: true, force: true });

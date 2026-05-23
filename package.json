@@ -6,6 +6,7 @@
   "scripts": {
     "clean": "node scripts/clean-dist.mjs",
     "build": "npm run clean && tsc && node scripts/copy-assets.mjs",
+    "pack": "npm run build && node scripts/pack-dist.mjs",
     "watch": "tsc -w"
   },
   "devDependencies": {

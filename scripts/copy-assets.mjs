@@ -1,9 +1,6 @@
 import { cpSync, mkdirSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const distDir = resolve(rootDir, "dist");
+import { distDir, rootDir } from "./utils.mjs";
 
 mkdirSync(distDir, { recursive: true });
 
