@@ -160,7 +160,7 @@ async function renderShortcutHint(): Promise<void> {
     try {
         const commands = await chrome.commands.getAll();
         const command = commands.find((item) => item.name === "open-prompt-picker");
-        shortcutHintEl.textContent = `Current hotkey: ${command?.shortcut || "not assigned"}`;
+        shortcutHintEl.textContent = `Current shortcut: ${command?.shortcut || "not assigned"}`;
     } catch (error) {
         console.error("[chatgpt-companion] shortcut hint read failed", error);
     }
@@ -173,7 +173,7 @@ async function openShortcutSettings(): Promise<void> {
         });
     } catch (error) {
         console.error("[chatgpt-companion] shortcut settings open failed", error);
-        setStatus("Open chrome://extensions/shortcuts to change the hotkey.");
+        setStatus("Open chrome://extensions/shortcuts to change the shortcut.");
     }
 }
 

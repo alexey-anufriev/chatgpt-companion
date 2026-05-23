@@ -88,17 +88,17 @@ export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
     },
     {
         id: "page-analysis-translated",
-        name: "Page Analysis translated",
+        name: "Page Analysis Translated",
         template: PAGE_ANALYSIS_TRANSLATED_PROMPT_TEMPLATE
     },
     {
         id: "short-summary",
-        name: "Short summary",
+        name: "Short Summary",
         template: SHORT_SUMMARY_PROMPT_TEMPLATE
     },
     {
         id: "short-summary-translated",
-        name: "Short summary translated",
+        name: "Short Summary Translated",
         template: SHORT_SUMMARY_TRANSLATED_PROMPT_TEMPLATE
     }
 ];

@@ -631,7 +631,7 @@ async function clearDataAndCache(): Promise<void> {
 
     const tabIds = await getOpenTabIds();
     await Promise.all(
-        tabIds.map((tabId) => chrome.sidePanel.close({ tabId }).catch(() => undefined))
+        tabIds.map((tabId) => closeSidePanelForTab(tabId))
     );
 
     await chrome.storage.local.remove([
@@ -646,6 +646,20 @@ async function clearDataAndCache(): Promise<void> {
     await clearCacheStorage();
     createContextMenus();
     await ensurePanelConfiguredForAllTabs();
+}
+
+/**
+ * Closes a tab-scoped side panel when the browser supports the close API.
+ *
+ * chrome.sidePanel.close is only available in Chrome 141+, while the rest of
+ * this extension can run on older Side Panel API versions.
+ */
+async function closeSidePanelForTab(tabId: number): Promise<void> {
+    const closeSidePanel = (chrome.sidePanel as {
+        close?: (options: { tabId: number }) => Promise<void>;
+    }).close;
+
+    await closeSidePanel?.({ tabId }).catch(() => undefined);
 }
 
 /**
