@@ -22,6 +22,8 @@ export type DiscussionState = {
     source: DiscussionSource;
     /** whether the ChatGPT content script already inserted this prompt */
     consumed: boolean;
+    /** whether the next prompt insertion should skip preferred auto-submit */
+    suppressAutoSendOnce?: boolean;
     /** ChatGPT conversation URL captured after ChatGPT creates a thread */
     chatUrl?: string;
     /** whether this discussion is only valid while its side panel is open */

@@ -255,9 +255,10 @@ async function tryApplyLatestPrompt(): Promise<void> {
 
     // mark the prompt consumed in extension storage so later page events do not
     // replay it into the composer
+    const { suppressAutoSendOnce, ...consumedDiscussion } = discussion;
     const nextDiscussions = { ...(data.discussions ?? {}) };
     nextDiscussions[currentSessionId] = {
-        ...discussion,
+        ...consumedDiscussion,
         consumed: true
     };
 
@@ -267,7 +268,9 @@ async function tryApplyLatestPrompt(): Promise<void> {
 
     if (discussion.prompt) {
         console.log("[chatgpt-companion] prompt inserted", { currentSessionId });
-        await submitPromptIfAutoSendingEnabled();
+        if (!suppressAutoSendOnce) {
+            await submitPromptIfAutoSendingEnabled();
+        }
     } else {
         console.log("[chatgpt-companion] composer cleared", { currentSessionId });
     }

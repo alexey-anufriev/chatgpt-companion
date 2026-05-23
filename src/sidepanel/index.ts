@@ -140,11 +140,12 @@ function attachEvents(): void {
         const discussions = { ...storage.discussions };
 
         // bumping stamp and resetting consumed makes the content script treat
-        // this existing prompt as a new insertion request
+        // this existing prompt as a new insertion request without auto-submit
         discussions[sessionId] = {
             ...discussions[sessionId],
             stamp: Date.now(),
-            consumed: false
+            consumed: false,
+            suppressAutoSendOnce: true
         };
 
         await chrome.storage.local.set({ discussions });
