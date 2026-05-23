@@ -16,6 +16,7 @@ const filesToCopy = [
     "src/sidepanel/index.html",
     "src/sidepanel/index.css",
     "src/rules.json",
+    "src/images/bmc-button.png",
     "src/icons/icon_16.png",
     "src/icons/icon_32.png",
     "src/icons/icon_48.png",

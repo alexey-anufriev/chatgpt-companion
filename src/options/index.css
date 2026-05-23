@@ -243,6 +243,53 @@ button:disabled {
     color: #667085;
 }
 
+.support {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    margin-top: 28px;
+    padding-top: 18px;
+    padding-bottom: 24px;
+    border-top: 1px solid #d9dee8;
+    text-align: center;
+}
+
+.supportText {
+    margin-bottom: 8px;
+    color: #667085;
+    font-size: 12px;
+}
+
+.supportLink {
+    display: flex;
+    justify-content: center;
+    width: 180px;
+    max-width: 100%;
+    border-radius: 8px;
+    transition: transform 120ms ease;
+}
+
+.supportLink:hover {
+    transform: translateY(-1px);
+}
+
+.supportLink:focus-visible {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+    outline: none;
+}
+
+.support img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    transition: box-shadow 120ms ease;
+}
+
+.supportLink:hover img {
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+}
+
 .sessions {
     margin-top: 30px;
     margin-bottom: 20px;
