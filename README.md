@@ -1,6 +1,6 @@
 # ChatGPT Companion
 
-Discuss the current page with ChatGPT from a Chrome side panel.
+Google Chrome Extension. Discuss the current page with ChatGPT from a Chrome side panel.
 
 Example: open any webpage, choose a prompt template from the context menu, and ChatGPT Companion inserts a structured prompt with the page title, URL, selected text, and your preferred response language.
 
